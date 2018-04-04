@@ -1,5 +1,5 @@
 /*
- *   Hardware Multiplexing As A Service (hmaas)
+ *   Howto Avoid Grabbing Emulators Nightlong: DLS as a Service
  *
  *   To compile:
  *    gcc -shared -o hmaas_opts.so hmaas_opts.c
@@ -22,7 +22,7 @@
  *
  * Supported spank options are job-id prefix;
  */
-SPANK_PLUGIN(hmaas, 1);
+SPANK_PLUGIN(hagen-daas, 1);
 
 /*
  * #define MAX_JOBNAME_LEN 
@@ -32,12 +32,8 @@ SPANK_PLUGIN(hmaas, 1);
 static int _check_opt(int val, const char* optarg, int remote);
 
 struct spank_option my_spank_options[] = {
-	{"hmaas-board-id", "[board-id]",
-	"Board id (currently USB serial, same as gres) of the hardware board to connect to.",
-	1, 0, (spank_opt_cb_f) _check_opt},
-	{"hbid", "[board-id]",
-	"Shortcut for --hmaas-board-id.",
-	1, 0, (spank_opt_cb_f) _check_opt},
+	{"daas-board-id", "[board-id]", "Board id (currently USB serial, same as gres) of the hardware board to connect to.", 1, 0, (spank_opt_cb_f) _check_opt},
+	{"dbid", "[board-id]", "Shortcut for --daas-board-id.", 1, 0, (spank_opt_cb_f) _check_opt},
 	SPANK_OPTIONS_TABLE_END};
 
 static int _check_opt(int val, const char* optarg, int remote)
@@ -57,19 +53,7 @@ int slurm_spank_init(spank_t sp, int ac, char** av)
 			return -1;
 	}
 
-	/*
-	 * // process plugin options
-	 * for (i = 0; i < ac; i++) {
-	 *     if (strncmp ("jobname_prefix=", av[i], 15) == 0) {
-	 *         const char *optarg = av[i] + 15;
-	 *         strncpy (&_jobname_prefix, optarg, MAX_JOBNAME_LEN);
-	 *     } else {
-	 *         slurm_error ("hmaas: Invalid option: %s", av[i]);
-	 *     }
-	 * }
-	 */
-
 	return 0;
 }
 
-// vim: sw=4 ts=4 sts=4 noexpandtab
+// vim: sw=4 ts=4 sts=4 noexpandtab tw=120

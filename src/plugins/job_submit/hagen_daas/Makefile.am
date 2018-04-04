@@ -6,8 +6,8 @@ PLUGIN_FLAGS = -module -avoid-version --export-dynamic -lboost_system
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common
 
-pkglib_LTLIBRARIES = hardware_multiplexing_as_a_service.la
+pkglib_LTLIBRARIES = hagen_daas.la
 
 # Job submit defaults plugin.
-hardware_multiplexing_as_a_service_la_SOURCES = hardware_multiplexing_as_a_service.c
-hardware_multiplexing_as_a_service_la_LDFLAGS = $(SO_LDFLAGS) $(PLUGIN_FLAGS)
+hagen_daas_la_SOURCES = hagen_daas.c
+hagen_daas_la_LDFLAGS = $(SO_LDFLAGS) $(PLUGIN_FLAGS)
