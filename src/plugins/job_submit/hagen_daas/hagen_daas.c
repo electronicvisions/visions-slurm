@@ -171,6 +171,7 @@ int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon);
 int init(void)
 {
 	running_daemons_l = list_create(_destroy_running_daemon);
+	// TODO: delete me
 	info("hagen daas initialized");
 	return SLURM_SUCCESS;
 }
