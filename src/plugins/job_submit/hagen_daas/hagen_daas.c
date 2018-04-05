@@ -15,6 +15,7 @@
 
 #include "slurm/slurm_errno.h"
 #include "src/common/list.h"
+#include "src/common/env.h"
 #include "src/common/slurm_xlator.h"
 #include "src/slurmctld/slurmctld.h"
 
@@ -92,6 +93,8 @@ static const service_t service_infos[NUM_SERVICES] = {
 typedef struct running_daemon
 {
 	char board_id[64];
+	char ip[15];
+	uint16_t port;
 	uint32_t job_id;
 } running_daemon_t;
 
@@ -126,7 +129,7 @@ static int _parse_options(
 	struct option_entry* parsed_options,
 	bool* zero_res_args);
 
-/* Maps baord_id to a pointer to the service to run.
+/* Maps board_id to a pointer to the service to run.
  *
  * Returns null pointer if mapping not possible.
  *
@@ -137,7 +140,7 @@ static int _parse_options(
 static service_t* _board_id_to_service(char const* board_id);
 
 
-/* Maps baord_id to a pointer to the service name to run.
+/* Maps board_id to a pointer to the service name to run.
  *
  * Returns null pointer if mapping not possible.
  *
@@ -154,6 +157,12 @@ static char const* _board_id_to_service_name(char const* board_id);
  */
 static service_t* _get_service(char const* service_name);
 
+
+/* Set the environment variables to point to the running service so that the job can connect to it.
+ *
+ */
+int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon);
+
 /***********************\
 * function definition *
 \***********************/
@@ -162,6 +171,7 @@ static service_t* _get_service(char const* service_name);
 int init(void)
 {
 	running_daemons_l = list_create(_destroy_running_daemon);
+	info("hagen daas initialized");
 	return SLURM_SUCCESS;
 }
 void fini(void)
@@ -197,6 +207,15 @@ extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char
 		retval = SLURM_SUCCESS;
 		goto CLEANUP;
 	}
+
+	running_daemon_t mock_daemon = {
+		"ritter-kunibert",
+		"127.0.0.1",
+		2222,
+		12345
+	};
+
+	_set_hagen_daas_env(job_desc, &mock_daemon);
 
 CLEANUP:
 
@@ -273,7 +292,7 @@ static int _parse_options(
 		arguments += 1; // truncate '=' at beginning of argument chain
 		if (strlen(arguments) > MAX_LENGTH_ARGUMENT_CHAIN) {
 			snprintf(
-				function_error_msg, MAX_LENGTH_ERROR, "To long argument, over %d chars",
+				function_error_msg, MAX_LENGTH_ERROR, "Too long argument, over %d chars",
 				MAX_LENGTH_ARGUMENT_CHAIN);
 			return HAGEN_DAAS_PLUGIN_FAILURE;
 		}
@@ -297,6 +316,18 @@ static int _parse_options(
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
+int _set_hagen_daas_env(job_desc_msg_t* job, running_deamon_t* daemon)
+{
+	if (env_array_append(&job->environment, ENV_NAME_QUIGGELDY_IP, daemon->ip) != 1)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	if (env_array_append_fmt(&job->environment, ENV_NAME_QUIGGELDY_PORT, "%d", daemon->port) != 1)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	return HAAGEN_DAAS_PLUGIN_SUCCESS;
+}
 
 static service_t* _board_id_to_service(char const* board_id)
 {
