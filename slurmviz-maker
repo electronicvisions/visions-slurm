@@ -3,6 +3,9 @@
 # hacky
 source /wang/environment/software/Modules/current/init/bash
 
+# load module containing gcc/linker etc explictly
+module load spack_visionary-defaults/2017-12-01
+
 SOURCE=$PWD
 test -f "${SOURCE}/slurmviz-maker" || exit 1
 test -f "${SOURCE}/AUTHORS" || exit 1

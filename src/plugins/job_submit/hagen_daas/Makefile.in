@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-# Makefile for job_submit/hagen_daas plugin
+# Makefile for job_submit/nmpm_custom_resource plugin
 
 VPATH = @srcdir@
 am__is_gnu_make = test -n '$(MAKEFILE_LIST)' && test -n '$(MAKELEVEL)'

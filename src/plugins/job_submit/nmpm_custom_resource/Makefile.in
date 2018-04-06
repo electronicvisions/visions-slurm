@@ -85,7 +85,9 @@ subdir = src/plugins/job_submit/nmpm_custom_resource
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/auxdir/depcomp
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_zlib.m4 \
+	$(top_srcdir)/auxdir/ax_gcc_builtin.m4 \
+	$(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
 	$(top_srcdir)/auxdir/ax_pthread.m4 \
 	$(top_srcdir)/auxdir/libtool.m4 \
 	$(top_srcdir)/auxdir/ltoptions.m4 \
@@ -95,11 +97,10 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
 	$(top_srcdir)/auxdir/slurm.m4 \
 	$(top_srcdir)/auxdir/x_ac__system_configuration.m4 \
 	$(top_srcdir)/auxdir/x_ac_affinity.m4 \
-	$(top_srcdir)/auxdir/x_ac_aix.m4 \
 	$(top_srcdir)/auxdir/x_ac_blcr.m4 \
 	$(top_srcdir)/auxdir/x_ac_bluegene.m4 \
-	$(top_srcdir)/auxdir/x_ac_cflags.m4 \
 	$(top_srcdir)/auxdir/x_ac_cray.m4 \
+	$(top_srcdir)/auxdir/x_ac_curl.m4 \
 	$(top_srcdir)/auxdir/x_ac_databases.m4 \
 	$(top_srcdir)/auxdir/x_ac_debug.m4 \
 	$(top_srcdir)/auxdir/x_ac_dlfcn.m4 \
@@ -108,23 +109,25 @@ am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_lib_hdf5.m4 \
 	$(top_srcdir)/auxdir/x_ac_gpl_licensed.m4 \
 	$(top_srcdir)/auxdir/x_ac_hwloc.m4 \
 	$(top_srcdir)/auxdir/x_ac_iso.m4 \
+	$(top_srcdir)/auxdir/x_ac_json.m4 \
 	$(top_srcdir)/auxdir/x_ac_lua.m4 \
+	$(top_srcdir)/auxdir/x_ac_lz4.m4 \
 	$(top_srcdir)/auxdir/x_ac_man2html.m4 \
 	$(top_srcdir)/auxdir/x_ac_munge.m4 \
 	$(top_srcdir)/auxdir/x_ac_ncurses.m4 \
+	$(top_srcdir)/auxdir/x_ac_netloc.m4 \
 	$(top_srcdir)/auxdir/x_ac_nrt.m4 \
 	$(top_srcdir)/auxdir/x_ac_ofed.m4 \
 	$(top_srcdir)/auxdir/x_ac_pam.m4 \
+	$(top_srcdir)/auxdir/x_ac_pmix.m4 \
 	$(top_srcdir)/auxdir/x_ac_printf_null.m4 \
 	$(top_srcdir)/auxdir/x_ac_ptrace.m4 \
 	$(top_srcdir)/auxdir/x_ac_readline.m4 \
 	$(top_srcdir)/auxdir/x_ac_rrdtool.m4 \
-	$(top_srcdir)/auxdir/x_ac_setpgrp.m4 \
 	$(top_srcdir)/auxdir/x_ac_setproctitle.m4 \
 	$(top_srcdir)/auxdir/x_ac_sgi_job.m4 \
 	$(top_srcdir)/auxdir/x_ac_slurm_ssl.m4 \
-	$(top_srcdir)/auxdir/x_ac_sun_const.m4 \
-	$(top_srcdir)/auxdir/x_ac_xcpu.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -238,17 +241,13 @@ ACLOCAL = @ACLOCAL@
 AMTAR = @AMTAR@
 AM_DEFAULT_VERBOSITY = @AM_DEFAULT_VERBOSITY@
 AR = @AR@
-AUTHD_CFLAGS = @AUTHD_CFLAGS@
-AUTHD_LIBS = @AUTHD_LIBS@
 AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
-BGL_LOADED = @BGL_LOADED@
 BGQ_LOADED = @BGQ_LOADED@
 BG_INCLUDES = @BG_INCLUDES@
 BG_LDFLAGS = @BG_LDFLAGS@
-BG_L_P_LOADED = @BG_L_P_LOADED@
 BLCR_CPPFLAGS = @BLCR_CPPFLAGS@
 BLCR_HOME = @BLCR_HOME@
 BLCR_LDFLAGS = @BLCR_LDFLAGS@
@@ -259,7 +258,6 @@ CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
 CHECK_CFLAGS = @CHECK_CFLAGS@
 CHECK_LIBS = @CHECK_LIBS@
-CMD_LDFLAGS = @CMD_LDFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CRAY_JOB_CPPFLAGS = @CRAY_JOB_CPPFLAGS@
@@ -275,6 +273,8 @@ CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
 CYGPATH_W = @CYGPATH_W@
+DATAWARP_CPPFLAGS = @DATAWARP_CPPFLAGS@
+DATAWARP_LDFLAGS = @DATAWARP_LDFLAGS@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DLLTOOL = @DLLTOOL@
@@ -302,7 +302,6 @@ GTK_LIBS = @GTK_LIBS@
 H5CC = @H5CC@
 H5FC = @H5FC@
 HAVEMYSQLCONFIG = @HAVEMYSQLCONFIG@
-HAVE_AIX = @HAVE_AIX@
 HAVE_MAN2HTML = @HAVE_MAN2HTML@
 HAVE_NRT = @HAVE_NRT@
 HAVE_OPENSSL = @HAVE_OPENSSL@
@@ -315,6 +314,7 @@ HDF5_FFLAGS = @HDF5_FFLAGS@
 HDF5_FLIBS = @HDF5_FLIBS@
 HDF5_LDFLAGS = @HDF5_LDFLAGS@
 HDF5_LIBS = @HDF5_LIBS@
+HDF5_TYPE = @HDF5_TYPE@
 HDF5_VERSION = @HDF5_VERSION@
 HWLOC_CPPFLAGS = @HWLOC_CPPFLAGS@
 HWLOC_LDFLAGS = @HWLOC_LDFLAGS@
@@ -324,15 +324,21 @@ INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
+JSON_CPPFLAGS = @JSON_CPPFLAGS@
+JSON_LDFLAGS = @JSON_LDFLAGS@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LIBCURL = @LIBCURL@
+LIBCURL_CPPFLAGS = @LIBCURL_CPPFLAGS@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
-LIB_LDFLAGS = @LIB_LDFLAGS@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
+LZ4_CPPFLAGS = @LZ4_CPPFLAGS@
+LZ4_LDFLAGS = @LZ4_LDFLAGS@
+LZ4_LIBS = @LZ4_LIBS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
@@ -344,6 +350,9 @@ MUNGE_LIBS = @MUNGE_LIBS@
 MYSQL_CFLAGS = @MYSQL_CFLAGS@
 MYSQL_LIBS = @MYSQL_LIBS@
 NCURSES = @NCURSES@
+NETLOC_CPPFLAGS = @NETLOC_CPPFLAGS@
+NETLOC_LDFLAGS = @NETLOC_LDFLAGS@
+NETLOC_LIBS = @NETLOC_LIBS@
 NM = @NM@
 NMEDIT = @NMEDIT@
 NRT_CPPFLAGS = @NRT_CPPFLAGS@
@@ -368,7 +377,11 @@ PATH_SEPARATOR = @PATH_SEPARATOR@
 PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
 PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
-PROCTRACKDIR = @PROCTRACKDIR@
+PMIX_LIBS = @PMIX_LIBS@
+PMIX_V1_CPPFLAGS = @PMIX_V1_CPPFLAGS@
+PMIX_V1_LDFLAGS = @PMIX_V1_LDFLAGS@
+PMIX_V2_CPPFLAGS = @PMIX_V2_CPPFLAGS@
+PMIX_V2_LDFLAGS = @PMIX_V2_LDFLAGS@
 PROJECT = @PROJECT@
 PTHREAD_CC = @PTHREAD_CC@
 PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
@@ -376,7 +389,6 @@ PTHREAD_LIBS = @PTHREAD_LIBS@
 RANLIB = @RANLIB@
 READLINE_LIBS = @READLINE_LIBS@
 REAL_BGQ_LOADED = @REAL_BGQ_LOADED@
-REAL_BG_L_P_LOADED = @REAL_BG_L_P_LOADED@
 RELEASE = @RELEASE@
 RRDTOOL_CPPFLAGS = @RRDTOOL_CPPFLAGS@
 RRDTOOL_LDFLAGS = @RRDTOOL_LDFLAGS@
@@ -387,6 +399,7 @@ SEMAPHORE_LIBS = @SEMAPHORE_LIBS@
 SEMAPHORE_SOURCES = @SEMAPHORE_SOURCES@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SLEEP_CMD = @SLEEP_CMD@
 SLURMCTLD_PORT = @SLURMCTLD_PORT@
 SLURMCTLD_PORT_COUNT = @SLURMCTLD_PORT_COUNT@
 SLURMDBD_PORT = @SLURMDBD_PORT@
@@ -407,8 +420,13 @@ SSL_CPPFLAGS = @SSL_CPPFLAGS@
 SSL_LDFLAGS = @SSL_LDFLAGS@
 SSL_LIBS = @SSL_LIBS@
 STRIP = @STRIP@
+SUCMD = @SUCMD@
 UTIL_LIBS = @UTIL_LIBS@
 VERSION = @VERSION@
+ZLIB_CPPFLAGS = @ZLIB_CPPFLAGS@
+ZLIB_LDFLAGS = @ZLIB_LDFLAGS@
+ZLIB_LIBS = @ZLIB_LIBS@
+_libcurl_config = @_libcurl_config@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
