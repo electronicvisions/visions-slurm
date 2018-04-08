@@ -5,7 +5,6 @@ SUBDIRS = \
 	cray \
 	defaults \
 	hagen_daas \
-	nmpm_custom_resource \
 	logging \
 	lua \
 	partition \
