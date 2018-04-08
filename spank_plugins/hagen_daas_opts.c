@@ -22,7 +22,7 @@
  *
  * Supported spank options are job-id prefix;
  */
-SPANK_PLUGIN(hagen-daas, 1);
+SPANK_PLUGIN(hagen_daas_opts, 1);
 
 /*
  * #define MAX_JOBNAME_LEN 

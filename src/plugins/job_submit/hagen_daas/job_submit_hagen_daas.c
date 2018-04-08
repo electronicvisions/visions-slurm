@@ -16,10 +16,12 @@
 #include "slurm/slurm_errno.h"
 #include "src/common/list.h"
 #include "src/common/env.h"
-#include "src/common/slurm_xlator.h"
+// #include "src/common/slurm_xlator.h"
+#include "src/common/log.h"
+#include "src/common/xstring.h"
 #include "src/slurmctld/slurmctld.h"
 
-#define SPANK_OPT_PREFIX "_SLURM_SPANK_OPTION_hagen-daas_opts_"
+#define SPANK_OPT_PREFIX "_SLURM_SPANK_OPTION_hagen_daas_opts_"
 
 #define NUM_FPGAS_ON_WAFER 48
 #define NUM_HICANNS_ON_WAFER 384
@@ -39,8 +41,8 @@
 
 // quiggeldy defines
 
-#define ENV_NAME_QUIGGELDY_IP "QUIGGELDY_IP="
-#define ENV_NAME_QUIGGELDY_PORT "QUIGGELDY_PORT="
+#define ENV_NAME_QUIGGELDY_IP "QUIGGELDY_IP"
+#define ENV_NAME_QUIGGELDY_PORT "QUIGGELDY_PORT"
 
 #define JOBNAME_PREFIX_QUIGGELDY "quiggeldy_"
 
@@ -69,9 +71,10 @@ struct option_index_t
 // global array of valid options
 #define NUM_OPTIONS 2
 #define NUM_UNIQUE_OPTIONS 1
+// Please note: dashes get converted to underscores
 static const struct option_index_t custom_plugin_options[NUM_OPTIONS] = {
 	{ "dbid",          0},
-	{ "daas-board-id", 0},
+	{ "daas_board_id", 0},
 };
 
 typedef struct service
@@ -100,7 +103,8 @@ typedef struct running_daemon
 
 static void _destroy_running_daemon(void* ptr)
 {
-	xfree((*running_daemon_t) ptr);
+	running_daemon_t* cast = ptr;
+	xfree(cast);
 }
 
 static List running_daemons_l;
@@ -137,7 +141,7 @@ static int _parse_options(
  *
  * TODO: Integrate into hwdb-like service that maps board-id to service type 
  */
-static service_t* _board_id_to_service(char const* board_id);
+static service_t const* _board_id_to_service(char const* board_id);
 
 
 /* Maps board_id to a pointer to the service name to run.
@@ -155,7 +159,7 @@ static char const* _board_id_to_service_name(char const* board_id);
  *
  * Returns nullpointer if service not found.
  */
-static service_t* _get_service(char const* service_name);
+static const service_t* _get_service(char const* service_name);
 
 
 /* Set the environment variables to point to the running service so that the job can connect to it.
@@ -171,8 +175,7 @@ int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon);
 int init(void)
 {
 	running_daemons_l = list_create(_destroy_running_daemon);
-	// TODO: delete me
-	info("hagen daas initialized");
+	info("Loaded %s", plugin_type);
 	return SLURM_SUCCESS;
 }
 void fini(void)
@@ -204,7 +207,7 @@ extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char
 
 	// check if any res arg was given, if not exit successfully
 	if (zero_res_args) {
-		info("no hagen-daas resources requested.");
+		info("no hagen_daas resources requested.");
 		retval = SLURM_SUCCESS;
 		goto CLEANUP;
 	}
@@ -216,7 +219,14 @@ extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char
 		12345
 	};
 
-	_set_hagen_daas_env(job_desc, &mock_daemon);
+	if (_set_hagen_daas_env(job_desc, &mock_daemon) != HAGEN_DAAS_PLUGIN_SUCCESS)
+	{
+		snprintf(my_errmsg, MAX_LENGTH_ERROR, "_set_hagen_daas_env: %s", function_error_msg);
+		retval = SLURM_ERROR;
+		goto CLEANUP;
+	}
+
+	retval = SLURM_SUCCESS;
 
 CLEANUP:
 
@@ -271,10 +281,11 @@ static int _parse_options(
 	char* option;
 	char* argument_token;
 	// each option is formated the following way
-	// _SLURM_SPANK_OPTION_wafer_res_opts_[option]=[argument,argument,...]
+	// _SLURM_SPANK_OPTION_hagen_daas_opts_[option]=[argument,argument,...]
 	// we iterate over all arguments of all options and save them in parsed_options
 	for (optioncount = 0; optioncount < job_desc->spank_job_env_size; optioncount++) {
 		char* spank_option_str = job_desc->spank_job_env[optioncount];
+		info("Trying option: %s", spank_option_str);
 		option = strstr(spank_option_str, SPANK_OPT_PREFIX);
 		if (option == NULL) {
 			// some other spank option, skip
@@ -317,8 +328,29 @@ static int _parse_options(
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
-int _set_hagen_daas_env(job_desc_msg_t* job, running_deamon_t* daemon)
+int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon)
 {
+	/*
+	 * if (job->environment == NULL)
+	 * {
+	 *     snprintf(function_error_msg, MAX_LENGTH_ERROR, "Could not set environment!");
+	 *     return HAGEN_DAAS_PLUGIN_FAILURE;
+	 * }
+	 */
+	info("# elements in env (var): %d", job->env_size);
+	if (job->environment != NULL)
+	{
+		info("# elements in env (xsize): %zu", xsize(job->environment) / sizeof(char*));
+		info("last element in env: %s", job->environment[job->env_size-1]);
+		info("last+1 element in env: %s", job->environment[job->env_size]);
+	}
+	info("job->environment (pre): %p", (void*) job->environment);
+
+	/*
+	 * info("job->pelog_env (pre): %p", (void*) job->pelog_env);
+	 * info("# elements in pelog_env (var): %d", job->pelog_env_size);
+	 */
+
 	if (env_array_append(&job->environment, ENV_NAME_QUIGGELDY_IP, daemon->ip) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
@@ -327,27 +359,43 @@ int _set_hagen_daas_env(job_desc_msg_t* job, running_deamon_t* daemon)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
-	return HAAGEN_DAAS_PLUGIN_SUCCESS;
+	info("job->environment: %p", (void*) job->environment);
+	info("# elements in env (xsize, post): %zu", xsize(*job->environment) / sizeof(char*));
+
+	job->env_size += 2;
+
+	size_t i;
+	for (i=0; i<job->env_size; ++i)
+	{
+		info("#%zu: %s", i, job->environment[i]);
+	}
+
+	info("last element in env (post): %s", job->environment[job->env_size-1]);
+	info("last+1 element in env (post): %s", job->environment[job->env_size]);
+
+	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
-static service_t* _board_id_to_service(char const* board_id)
+static service_t const* _board_id_to_service(char const* board_id)
 {
 	return _get_service(_board_id_to_service_name(board_id));
 }
 
 
+char const* _default_service_name = "dls-v2";
+
 static char const* _board_id_to_service_name(char const* board_id)
 {
 	// TODO: implement me
-	return "dls-v2";
+	return _default_service_name;
 }
 
-static service_t* _get_service(char const* service_name);
+static service_t const* _get_service(char const* service_name)
 {
 	size_t i;
 	for (i = 0; i < NUM_SERVICES; ++i)
 	{
-		if (strncmp(service_name, service_infos[i], MAX_LENGTH_SERVICE_NAME) == 0)
+		if (strncmp(service_name, service_infos[i].service_name, MAX_LENGTH_SERVICE_NAME) == 0)
 		{
 			return &service_infos[i];
 		}

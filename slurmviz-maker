@@ -77,6 +77,24 @@ systemd_slurm() {
   fi
 }
 
+cmd_quick_install() {
+    systemd_slurm test || { echo -e "Stop slurm prior running this:\n\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }
+
+    test $UID -eq 0 || { echo "You must be root"; exit 1; }
+
+    rm -f slurmfiles.lst
+    INSTALL_WAFER_RES_OPTS=${INSTALL_PREFIX}/lib/slurm/wafer_res_opts.so
+    INSTALL_HAGEN_DAAS_OPTS=${INSTALL_PREFIX}/lib/slurm/hagen_daas_opts.so
+    pushd ${SOURCE}
+      make install -j4
+      pushd spank_plugins
+        gcc -shared -fPIC -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
+        gcc -shared -fPIC -o ${INSTALL_HAGEN_DAAS_OPTS} hagen_daas_opts.c
+      popd
+      find ${INSTALL_PREFIX} -type f ! -path ${INSTALL_PREFIX}'/src/*' | sort > /tmp/slurmfiles-install
+    popd
+}
+
 
 cmd_install() {
   systemd_slurm test || { echo -e "Stop slurm prior running this:\n\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }

@@ -163,16 +163,18 @@ am__uninstall_files_from_dir = { \
   }
 am__installdirs = "$(DESTDIR)$(pkglibdir)"
 LTLIBRARIES = $(pkglib_LTLIBRARIES)
-hagen_daas_la_LIBADD =
-am_hagen_daas_la_OBJECTS = hagen_daas.lo
-hagen_daas_la_OBJECTS = $(am_hagen_daas_la_OBJECTS)
+job_submit_hagen_daas_la_LIBADD =
+am_job_submit_hagen_daas_la_OBJECTS = job_submit_hagen_daas.lo
+job_submit_hagen_daas_la_OBJECTS =  \
+	$(am_job_submit_hagen_daas_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
-hagen_daas_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) \
-	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
-	$(hagen_daas_la_LDFLAGS) $(LDFLAGS) -o $@
+job_submit_hagen_daas_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
+	$(AM_CFLAGS) $(CFLAGS) $(job_submit_hagen_daas_la_LDFLAGS) \
+	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -207,8 +209,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(hagen_daas_la_SOURCES)
-DIST_SOURCES = $(hagen_daas_la_SOURCES)
+SOURCES = $(job_submit_hagen_daas_la_SOURCES)
+DIST_SOURCES = $(job_submit_hagen_daas_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -488,11 +490,11 @@ top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
 PLUGIN_FLAGS = -module -avoid-version --export-dynamic -lboost_system
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common
-pkglib_LTLIBRARIES = hagen_daas.la
+pkglib_LTLIBRARIES = job_submit_hagen_daas.la
 
 # Job submit defaults plugin.
-hagen_daas_la_SOURCES = hagen_daas.c
-hagen_daas_la_LDFLAGS = $(SO_LDFLAGS) $(PLUGIN_FLAGS)
+job_submit_hagen_daas_la_SOURCES = job_submit_hagen_daas.c
+job_submit_hagen_daas_la_LDFLAGS = $(SO_LDFLAGS) $(PLUGIN_FLAGS)
 all: all-am
 
 .SUFFIXES:
@@ -563,8 +565,8 @@ clean-pkglibLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
-hagen_daas.la: $(hagen_daas_la_OBJECTS) $(hagen_daas_la_DEPENDENCIES) $(EXTRA_hagen_daas_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(hagen_daas_la_LINK) -rpath $(pkglibdir) $(hagen_daas_la_OBJECTS) $(hagen_daas_la_LIBADD) $(LIBS)
+job_submit_hagen_daas.la: $(job_submit_hagen_daas_la_OBJECTS) $(job_submit_hagen_daas_la_DEPENDENCIES) $(EXTRA_job_submit_hagen_daas_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(job_submit_hagen_daas_la_LINK) -rpath $(pkglibdir) $(job_submit_hagen_daas_la_OBJECTS) $(job_submit_hagen_daas_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -572,7 +574,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hagen_daas.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/job_submit_hagen_daas.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
