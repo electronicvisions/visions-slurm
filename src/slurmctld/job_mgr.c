@@ -7605,6 +7605,23 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	job_ptr->bit_flags |= JOB_DEPENDENT;
 	job_ptr->last_sched_eval = time(NULL);
 
+	/* Check if any job_submit plugin supplied supplementary environment
+	 * variables in the job description
+	 */
+	if (allocate && job_desc->env_size > 0)
+	{
+		job_ptr->details->env_sup = xrealloc(job_ptr->details->env_sup,
+				sizeof(char *) *
+				(job_ptr->details->env_cnt + job_desc->env_size));
+		size_t i;
+		for (i = 0; (i < job_desc->env_size); ++i) {
+			job_ptr->details->env_sup[job_ptr->details->env_cnt++] =
+				job_desc->environment[i];
+		}
+		xfree(job_desc->environment);
+		job_desc->env_size = 0;
+	}
+
 	part_ptr_list = NULL;
 
 	memcpy(&job_ptr->limit_set, &acct_policy_limit_set,
