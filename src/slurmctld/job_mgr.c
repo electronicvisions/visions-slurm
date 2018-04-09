@@ -6246,6 +6246,23 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 	job_ptr->part_ptr = part_ptr;
 	job_ptr->part_ptr_list = part_ptr_list;
 
+	/* Check if any job_submit plugin supplied supplementary environment
+	 * variables in the job description
+	 */
+	if (allocate && job_desc->env_size > 0)
+	{
+		job_ptr->details->env_sup = xrealloc(job_ptr->details->env_sup,
+				sizeof(char *) *
+				(job_ptr->details->env_cnt + job_desc->env_size));
+		size_t i;
+		for (i = 0; (i < job_desc->env_size); ++i) {
+			job_ptr->details->env_sup[job_ptr->details->env_cnt++] =
+				job_desc->environment[i];
+		}
+		xfree(job_desc->environment);
+		job_desc->env_size = 0;
+	}
+
 	part_ptr_list = NULL;
 	if ((error_code = checkpoint_alloc_jobinfo(&(job_ptr->check_job)))) {
 		error("Failed to allocate checkpoint info for job");
