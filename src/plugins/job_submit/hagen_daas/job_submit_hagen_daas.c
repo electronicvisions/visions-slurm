@@ -18,6 +18,7 @@
 #include "src/common/env.h"
 // #include "src/common/slurm_xlator.h"
 #include "src/common/log.h"
+#include "src/common/node_conf.h"
 #include "src/common/xstring.h"
 #include "src/slurmctld/slurmctld.h"
 
@@ -27,7 +28,7 @@
 #define NUM_HICANNS_ON_WAFER 384
 #define MAX_ADCS_PER_WAFER 12
 
-#define MAX_NUM_ARGUMENTS 1 // currently only a single resource may be specified
+#define MAX_NUM_ARGUMENTS 64
 #define MAX_LENGTH_ARGUMENT_CHAIN 10000 // max number of chars for one argument chain
 #define MAX_LENGTH_ARGUMENT 50          // max number of chars for one element of an argument chain
 #define MAX_LENGTH_ERROR 5000
@@ -73,8 +74,8 @@ struct option_index_t
 #define NUM_UNIQUE_OPTIONS 1
 // Please note: dashes get converted to underscores
 static const struct option_index_t custom_plugin_options[NUM_OPTIONS] = {
-	{ "dbid",          0},
-	{ "daas_board_id", 0},
+	{ "dbid",          0 },
+	{ "daas_board_id", 0 },
 };
 
 typedef struct service
@@ -167,6 +168,19 @@ static const service_t* _get_service(char const* service_name);
  */
 int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon);
 
+/* Find which node has the given gres.
+ */
+static struct node_record* _find_node_with_gres(char* gres);
+
+/* Helper function to find a given gres_name in a node
+ */
+int _find_gres(void *x, void *gres_name);
+
+/* Takes a slurm address and converts it to a string representing the ip
+ */
+static char* _addr2ip(slurm_addr_t *addr);
+
+
 /***********************\
 * function definition *
 \***********************/
@@ -206,25 +220,39 @@ extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char
 	}
 
 	// check if any res arg was given, if not exit successfully
-	if (zero_res_args) {
+	if (zero_res_args || (parsed_options[_option_lookup("dbid")].num_arguments == 0)) {
 		info("no hagen_daas resources requested.");
 		retval = SLURM_SUCCESS;
 		goto CLEANUP;
 	}
+	char* board_id = parsed_options[_option_lookup("dbid")].arguments[0];
+	struct node_record* node = _find_node_with_gres(board_id);
 
-	running_daemon_t mock_daemon = {
-		"ritter-kunibert",
-		"127.0.0.1",
-		2222,
-		12345
-	};
+	if (node != NULL)
+	{
+		info("Found node %s hosting %s", node->node_hostname, board_id);
+	}
+	else
+	{
+		info("Found no node hosting %s", board_id);
+	}
 
-	if (_set_hagen_daas_env(job_desc, &mock_daemon) != HAGEN_DAAS_PLUGIN_SUCCESS)
+	running_daemon_t* mock_daemon = xmalloc(sizeof(running_daemon_t));
+	char* ip = _addr2ip(&node->slurm_addr);
+	strcpy(mock_daemon->board_id, board_id);
+	strcpy(mock_daemon->ip, ip);
+	xfree(ip);
+	mock_daemon->job_id = 12345;
+	mock_daemon->port = 2222;
+
+	if (_set_hagen_daas_env(job_desc, mock_daemon) != HAGEN_DAAS_PLUGIN_SUCCESS)
 	{
 		snprintf(my_errmsg, MAX_LENGTH_ERROR, "_set_hagen_daas_env: %s", function_error_msg);
 		retval = SLURM_ERROR;
+		xfree(mock_daemon);
 		goto CLEANUP;
 	}
+	xfree(mock_daemon);
 
 	retval = SLURM_SUCCESS;
 
@@ -258,6 +286,24 @@ static int _str2int(char const* str, int* p2int)
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	*p2int = (int) value;
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
+}
+
+static char* _addr2ip(slurm_addr_t *addr)
+{
+	xassert(addr->sin_family == AF_INET);
+
+	char* retval = xmalloc(sizeof(char) * 16);
+	memset(retval, 0, 16);
+
+	unsigned char bytes[4];
+
+    bytes[0] = (addr->sin_addr.s_addr >>  0) & 0xFF; // compiler is smart
+    bytes[1] = (addr->sin_addr.s_addr >>  8) & 0xFF;
+    bytes[2] = (addr->sin_addr.s_addr >> 16) & 0xFF;
+    bytes[3] = (addr->sin_addr.s_addr >> 24) & 0xFF;
+    snprintf(retval, 16, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
+
+	return retval;
 }
 
 static int _option_lookup(char const* option_string)
@@ -330,13 +376,6 @@ static int _parse_options(
 
 int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon)
 {
-	/*
-	 * if (job->environment == NULL)
-	 * {
-	 *     snprintf(function_error_msg, MAX_LENGTH_ERROR, "Could not set environment!");
-	 *     return HAGEN_DAAS_PLUGIN_FAILURE;
-	 * }
-	 */
 	info("# elements in env (var): %d", job->env_size);
 	if (job->environment != NULL)
 	{
@@ -346,11 +385,6 @@ int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon)
 	}
 	info("job->environment (pre): %p", (void*) job->environment);
 
-	/*
-	 * info("job->pelog_env (pre): %p", (void*) job->pelog_env);
-	 * info("# elements in pelog_env (var): %d", job->pelog_env_size);
-	 */
-
 	if (env_array_append(&job->environment, ENV_NAME_QUIGGELDY_IP, daemon->ip) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
@@ -359,7 +393,7 @@ int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
-	info("job->environment: %p", (void*) job->environment);
+	info("job->environment (post): %p", (void*) job->environment);
 	info("# elements in env (xsize, post): %zu", xsize(*job->environment) / sizeof(char*));
 
 	job->env_size += 2;
@@ -382,7 +416,7 @@ static service_t const* _board_id_to_service(char const* board_id)
 }
 
 
-char const* _default_service_name = "dls-v2";
+static char const* _default_service_name = "dls-v2";
 
 static char const* _board_id_to_service_name(char const* board_id)
 {
@@ -401,6 +435,43 @@ static service_t const* _get_service(char const* service_name)
 		}
 	}
 	return NULL;
+}
+
+static struct node_record* _find_node_with_gres(char* gres)
+{
+	char* gres_sep = ",";
+	struct node_record* retval = NULL;
+	char* gres_node;
+	char* buf;
+	char* gres_cpy;
+	// gres attribute is not hashed -> revert to linear search
+	// index over nodes
+	size_t i;
+	for (i=0; i < node_record_count; ++i)
+	{
+		if (node_record_table_ptr[i].config_ptr->gres == NULL)
+		{
+			continue;
+		}
+		// make copy because strtok_r replaces seperator in the original string with 0
+		gres_cpy = xstrdup(node_record_table_ptr[i].config_ptr->gres);
+		for(gres_node = strtok_r(gres_cpy, gres_sep, &buf);
+			gres_node;
+			gres_node = strtok_r(NULL, gres_sep, &buf))
+		{
+			if (xstrcmp(gres_node, gres) == 0)
+			{
+				retval = &node_record_table_ptr[i];
+				break;
+			}
+		}
+		xfree(gres_cpy);
+		if (retval != NULL)
+		{
+			break;
+		}
+	}
+	return retval;
 }
 
 // vim: sw=4 ts=4 sts=4 noexpandtab tw=120

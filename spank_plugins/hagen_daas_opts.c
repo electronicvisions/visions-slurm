@@ -32,8 +32,12 @@ SPANK_PLUGIN(hagen_daas_opts, 1);
 static int _check_opt(int val, const char* optarg, int remote);
 
 struct spank_option my_spank_options[] = {
-	{"daas-board-id", "[board-id]", "Board id (currently USB serial, same as gres) of the hardware board to connect to.", 1, 0, (spank_opt_cb_f) _check_opt},
-	{"dbid", "[board-id]", "Shortcut for --daas-board-id.", 1, 0, (spank_opt_cb_f) _check_opt},
+	{	"daas-board-id", "[board-id]",
+		"Board id (currently USB serial, same as gres) of the hardware board to connect to.",
+		1, 0, (spank_opt_cb_f) _check_opt},
+	{	"dbid", "[board-id]",
+		"Shortcut for --daas-board-id.",
+		1, 0, (spank_opt_cb_f) _check_opt},
 	SPANK_OPTIONS_TABLE_END};
 
 static int _check_opt(int val, const char* optarg, int remote)
