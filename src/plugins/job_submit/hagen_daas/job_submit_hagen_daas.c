@@ -56,26 +56,27 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
 const uint32_t min_plug_version = 100;
 
 // holds array of strings of one option entry
-struct option_entry
+typedef struct option_entry
 {
 	char arguments[MAX_NUM_ARGUMENTS][MAX_LENGTH_ARGUMENT];
 	size_t num_arguments;
-};
+} option_entry_t;
 
 // pair of option string and index
-struct option_index_t
+typedef struct option_index
 {
 	char option_name[MAX_LENGTH_OPTION_NAME];
 	int index;
-};
+} option_index_t;
 
 // global array of valid options
-#define NUM_OPTIONS 2
-#define NUM_UNIQUE_OPTIONS 1
+#define NUM_OPTIONS 3
+#define NUM_UNIQUE_OPTIONS 2
 // Please note: dashes get converted to underscores
-static const struct option_index_t custom_plugin_options[NUM_OPTIONS] = {
+static option_index_t custom_plugin_options[NUM_OPTIONS] = {
 	{ "dbid",          0 },
 	{ "daas_board_id", 0 },
+	{ "start_scoop",   1 },
 };
 
 typedef struct service
@@ -94,21 +95,24 @@ static const service_t service_infos[NUM_SERVICES] = {
 	{ "hicann-x", "quiggeldy", 5668, 600, 900 },
 };
 
-typedef struct running_daemon
+typedef struct running_scoop
 {
 	char board_id[64];
-	char ip[15];
-	uint16_t port;
+	char ip[16];
 	uint32_t job_id;
-} running_daemon_t;
+	service_t const* service;
+} running_scoop_t;
 
-static void _destroy_running_daemon(void* ptr)
+static void _destroy_running_scoop(void* ptr)
 {
-	running_daemon_t* cast = ptr;
+	running_scoop_t* cast = ptr;
 	xfree(cast);
 }
 
-static List running_daemons_l;
+
+// TODO add mutex/lookup slurm lock implementation
+static List running_scoops_l;
+
 
 // global string to hold error message for slurm
 static char function_error_msg[MAX_LENGTH_ERROR];
@@ -131,7 +135,7 @@ static int _option_lookup(char const* option_string);
  found */
 static int _parse_options(
 	struct job_descriptor const* job_desc,
-	struct option_entry* parsed_options,
+	option_entry_t* parsed_options,
 	bool* zero_res_args);
 
 /* Maps board_id to a pointer to the service to run.
@@ -143,6 +147,15 @@ static int _parse_options(
  * TODO: Integrate into hwdb-like service that maps board-id to service type 
  */
 static service_t const* _board_id_to_service(char const* board_id);
+
+
+/* xmalloc and fill a running_scoop_t with needed information.
+ *
+ * Caller is responsible for free-ing.
+ *
+ * TODO: Take optional job-descriptor and extract job-id
+ */
+static running_scoop_t* _build_scoop(char const* board_id, struct node_record const* node, service_t const* service);
 
 
 /* Maps board_id to a pointer to the service name to run.
@@ -166,19 +179,44 @@ static const service_t* _get_service(char const* service_name);
 /* Set the environment variables to point to the running service so that the job can connect to it.
  *
  */
-int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon);
+static int _set_env(job_desc_msg_t* job, running_scoop_t* scoop);
+
+
+/* Prepare the user submitted job.
+ *
+ */
+static int _prepare_job(job_desc_msg_t* job, option_entry_t* parsed_options);
+
+
+/* Check if scoop is running and if not launch a job start starts it
+ *
+ */
+static int _launch_scoops(job_desc_msg_t* job, option_entry_t* parsed_options);
+
 
 /* Find which node has the given gres.
  */
-static struct node_record* _find_node_with_gres(char* gres);
+static struct node_record* _gres_to_node(char const* gres);
 
-/* Helper function to find a given gres_name in a node
+/* Compare scoops by comparing the board_id which is unique
  */
-int _find_gres(void *x, void *gres_name);
+static int _cmp_scoops_by_board_id(void *x, void* key);
+
+/* Check if a scoop is running for the given board id, else return NULL
+ *
+ */
+static running_scoop_t* _board_id_to_scoop(char const* board_id);
+
+
+/* Launch the given scoop configuration in a job and set the returned job id in scoop
+ *
+ */
+static int _launch_scoop_job(running_scoop_t* scoop_to_launch);
+
 
 /* Takes a slurm address and converts it to a string representing the ip
  */
-static char* _addr2ip(slurm_addr_t *addr);
+static char* _addr2ip(slurm_addr_t const* addr);
 
 
 /***********************\
@@ -188,20 +226,20 @@ static char* _addr2ip(slurm_addr_t *addr);
 // slurm required functions
 int init(void)
 {
-	running_daemons_l = list_create(_destroy_running_daemon);
+	running_scoops_l = list_create(_destroy_running_scoop);
 	info("Loaded %s", plugin_type);
 	return SLURM_SUCCESS;
 }
 void fini(void)
 {
-	list_destroy(running_daemons_l);
+	list_destroy(running_scoops_l);
 }
 
 // main plugin function
 extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char** err_msg)
 {
-	size_t optioncounter, argcount;
-	struct option_entry parsed_options[NUM_UNIQUE_OPTIONS]; // holds all parsed options
+	size_t optioncounter;
+	option_entry_t parsed_options[NUM_UNIQUE_OPTIONS]; // holds all parsed options
 	char my_errmsg[MAX_LENGTH_ERROR]; // string for temporary error message
 	bool zero_res_args = true;
 	int retval = SLURM_ERROR;
@@ -220,40 +258,21 @@ extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char
 	}
 
 	// check if any res arg was given, if not exit successfully
-	if (zero_res_args || (parsed_options[_option_lookup("dbid")].num_arguments == 0)) {
+	if (zero_res_args) {
 		info("no hagen_daas resources requested.");
 		retval = SLURM_SUCCESS;
 		goto CLEANUP;
 	}
-	char* board_id = parsed_options[_option_lookup("dbid")].arguments[0];
-	struct node_record* node = _find_node_with_gres(board_id);
 
-	if (node != NULL)
+	if (parsed_options[_option_lookup("dbid")].num_arguments > 0)
 	{
-		info("Found node %s hosting %s", node->node_hostname, board_id);
+		if (_prepare_job(job_desc, parsed_options) != HAGEN_DAAS_PLUGIN_SUCCESS)
+		{
+			snprintf(my_errmsg, MAX_LENGTH_ERROR, "_prepare_job: %s", function_error_msg);
+			retval = SLURM_ERROR;
+			goto CLEANUP;
+		}
 	}
-	else
-	{
-		info("Found no node hosting %s", board_id);
-	}
-
-	running_daemon_t* mock_daemon = xmalloc(sizeof(running_daemon_t));
-	char* ip = _addr2ip(&node->slurm_addr);
-	strcpy(mock_daemon->board_id, board_id);
-	strcpy(mock_daemon->ip, ip);
-	xfree(ip);
-	mock_daemon->job_id = 12345;
-	mock_daemon->port = 2222;
-
-	if (_set_hagen_daas_env(job_desc, mock_daemon) != HAGEN_DAAS_PLUGIN_SUCCESS)
-	{
-		snprintf(my_errmsg, MAX_LENGTH_ERROR, "_set_hagen_daas_env: %s", function_error_msg);
-		retval = SLURM_ERROR;
-		xfree(mock_daemon);
-		goto CLEANUP;
-	}
-	xfree(mock_daemon);
-
 	retval = SLURM_SUCCESS;
 
 CLEANUP:
@@ -288,7 +307,7 @@ static int _str2int(char const* str, int* p2int)
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
-static char* _addr2ip(slurm_addr_t *addr)
+static char* _addr2ip(slurm_addr_t const* addr)
 {
 	xassert(addr->sin_family == AF_INET);
 
@@ -319,7 +338,7 @@ static int _option_lookup(char const* option_string)
 
 // adapted from src/plugins/job_submit/nmpm_custom_resource/job_submit_nmpm_custom_resource.c
 static int _parse_options(
-	struct job_descriptor const* job_desc, struct option_entry* parsed_options, bool* zero_res_args)
+	struct job_descriptor const* job_desc, option_entry_t* parsed_options, bool* zero_res_args)
 {
 	size_t optioncount, argcount;
 	char argumentsrc[MAX_LENGTH_ARGUMENT_CHAIN];
@@ -374,7 +393,7 @@ static int _parse_options(
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
-int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon)
+static int _set_env(job_desc_msg_t* job, running_scoop_t* scoop)
 {
 	info("# elements in env (var): %d", job->env_size);
 	if (job->environment != NULL)
@@ -385,11 +404,11 @@ int _set_hagen_daas_env(job_desc_msg_t* job, running_daemon_t* daemon)
 	}
 	info("job->environment (pre): %p", (void*) job->environment);
 
-	if (env_array_append(&job->environment, ENV_NAME_QUIGGELDY_IP, daemon->ip) != 1)
+	if (env_array_append(&job->environment, ENV_NAME_QUIGGELDY_IP, scoop->ip) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
-	if (env_array_append_fmt(&job->environment, ENV_NAME_QUIGGELDY_PORT, "%d", daemon->port) != 1)
+	if (env_array_append_fmt(&job->environment, ENV_NAME_QUIGGELDY_PORT, "%d", scoop->service->port) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
@@ -437,13 +456,19 @@ static service_t const* _get_service(char const* service_name)
 	return NULL;
 }
 
-static struct node_record* _find_node_with_gres(char* gres)
+static struct node_record* _gres_to_node(char const* gres)
 {
 	char* gres_sep = ",";
 	struct node_record* retval = NULL;
+	bool gres_found = false;
+
+	// helper variables for string comparison because strtok_r replaces seperators by NULL
 	char* gres_node;
-	char* buf;
-	char* gres_cpy;
+	char* gres_cpy_outter;
+	char* buf_outter;
+	char* gres_cpy_inner;
+	char* buf_inner;
+
 	// gres attribute is not hashed -> revert to linear search
 	// index over nodes
 	size_t i;
@@ -454,24 +479,129 @@ static struct node_record* _find_node_with_gres(char* gres)
 			continue;
 		}
 		// make copy because strtok_r replaces seperator in the original string with 0
-		gres_cpy = xstrdup(node_record_table_ptr[i].config_ptr->gres);
-		for(gres_node = strtok_r(gres_cpy, gres_sep, &buf);
+		gres_cpy_outter = xstrdup(node_record_table_ptr[i].config_ptr->gres);
+		info("Gres string for node %s: %s", node_record_table_ptr[i].node_hostname, gres_cpy_outter);
+		for(gres_node = strtok_r(gres_cpy_outter, gres_sep, &buf_outter);
 			gres_node;
-			gres_node = strtok_r(NULL, gres_sep, &buf))
+			gres_node = strtok_r(NULL, gres_sep, &buf_outter))
 		{
-			if (xstrcmp(gres_node, gres) == 0)
+			// if the gres configuration contains counts or the ':no_consume'-tag, comparison will fail
+			// -> gres name is the name up until the first colon
+			gres_cpy_inner = xstrdup(gres_node);
+			gres_found = xstrcmp(strtok_r(gres_cpy_inner, ":", &buf_inner), gres) == 0;
+			xfree(gres_cpy_inner);
+
+			if (gres_found)
 			{
 				retval = &node_record_table_ptr[i];
 				break;
 			}
 		}
-		xfree(gres_cpy);
-		if (retval != NULL)
+		xfree(gres_cpy_outter);
+		if (gres_found)
 		{
 			break;
 		}
 	}
 	return retval;
+}
+
+static int _prepare_job(struct job_descriptor* job_desc, option_entry_t* parsed_options)
+{
+	option_entry_t* option_dbid = &parsed_options[_option_lookup("dbid")];
+
+	if (option_dbid->num_arguments > 1)
+	{
+		snprintf(
+			function_error_msg, MAX_LENGTH_ERROR,
+			"We currently support one experiment board per job only!");
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+
+	char* board_id = option_dbid->arguments[0];
+
+	// first, see if the scoop is already running and get the information from there
+	running_scoop_t* scoop = _board_id_to_scoop(board_id);
+	bool scoop_running = scoop != NULL;
+
+	if (!scoop_running)
+	{
+		// if the scoop is not running, we have to look up where it would run so that the job has these information
+		service_t const* service = _board_id_to_service(board_id);
+
+		struct node_record* node = _gres_to_node(board_id);
+		
+		// DELME start
+		if (node != NULL)
+		{
+			info("Found node %s hosting %s", node->node_hostname, board_id);
+		}
+		else
+		{
+			info("Found no node hosting %s", board_id);
+		}
+		// DELME stop
+		
+		// build the mock scoop
+		scoop = _build_scoop(board_id, node, service);
+	}
+
+	int retval = _set_env(job_desc, scoop);
+	if (!scoop_running)
+	{
+		// if the scoop is not running we build a temporary placeholder -> free it
+		xfree(scoop);
+	}
+	return retval;
+}
+
+static int _launch_scoops(job_desc_msg_t* job, option_entry_t* parsed_options)
+{
+	option_entry_t* option_scoop = &parsed_options[_option_lookup("start_scoop")];
+	size_t i;
+	running_scoop_t* scoop;
+
+	// check if scoop is running
+	for (i=0; i < option_scoop->num_arguments; ++i)
+	{
+		scoop = _board_id_to_scoop(option_scoop->arguments[i]);
+		// if scoop is running -> nothing to do
+		if (scoop == NULL)
+		{
+			/* _launch_scoop_job(); */
+		}
+	}
+	return HAGEN_DAAS_PLUGIN_SUCCESS;
+}
+
+static running_scoop_t* _build_scoop(char const* board_id, struct node_record const* node, service_t const* service)
+{
+	running_scoop_t* scoop = xmalloc(sizeof(running_scoop_t));
+
+	strcpy(scoop->board_id, board_id);
+
+	char* ip = _addr2ip(&node->slurm_addr);
+	strcpy(scoop->ip, ip);
+	xfree(ip);
+
+	scoop->job_id = -1;
+	scoop->service = service;
+
+	return scoop;
+}
+
+
+static int _cmp_scoops_by_board_id(void* x, void* key)
+{
+	running_scoop_t* scoop = x;
+	char const* board_id = key;
+
+	return xstrcmp(scoop->board_id, board_id);
+}
+
+static running_scoop_t* _board_id_to_scoop(char const* board_id)
+{
+	return (running_scoop_t*) list_find_first(running_scoops_l, _cmp_scoops_by_board_id, (void *) board_id);
 }
 
 // vim: sw=4 ts=4 sts=4 noexpandtab tw=120

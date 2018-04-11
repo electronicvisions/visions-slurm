@@ -38,6 +38,9 @@ struct spank_option my_spank_options[] = {
 	{	"dbid", "[board-id]",
 		"Shortcut for --daas-board-id.",
 		1, 0, (spank_opt_cb_f) _check_opt},
+	{	"start-scoop", "[board-id]",
+		"Start a scoop (arbiter daemon) for the given board id.",
+		1, 0, (spank_opt_cb_f) _check_opt},
 	SPANK_OPTIONS_TABLE_END};
 
 static int _check_opt(int val, const char* optarg, int remote)
