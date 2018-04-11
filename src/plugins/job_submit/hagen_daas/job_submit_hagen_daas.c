@@ -42,10 +42,11 @@
 
 // quiggeldy defines
 
-#define ENV_NAME_QUIGGELDY_IP "QUIGGELDY_IP"
-#define ENV_NAME_QUIGGELDY_PORT "QUIGGELDY_PORT"
+const char env_name_quiggeldy_ip[] = "QUIGGELDY_IP";
+const char env_name_quiggeldy_port[] = "QUIGGELDY_PORT";
+const char env_name_board_id[] = "HAGEN_DAAS_BOARD";
 
-#define JOBNAME_PREFIX_QUIGGELDY "quiggeldy_"
+const char jobname_prefix_quiggeldy[] = "quiggeldy_";
 
 // SLURM plugin definitions
 const char plugin_name[] = "Job submit 'howto avoid grabbing emulators nightlong - DLS as a Service' plugin. "
@@ -111,6 +112,7 @@ static void _destroy_running_scoop(void* ptr)
 
 
 // TODO add mutex/lookup slurm lock implementation
+static pthread_mutex_t* mutex_running_scoops_l;
 static List running_scoops_l;
 
 
@@ -191,7 +193,7 @@ static int _prepare_job(job_desc_msg_t* job, option_entry_t* parsed_options);
 /* Check if scoop is running and if not launch a job start starts it
  *
  */
-static int _launch_scoops(job_desc_msg_t* job, option_entry_t* parsed_options);
+static int _launch_scoops(option_entry_t* parsed_options);
 
 
 /* Find which node has the given gres.
@@ -211,7 +213,7 @@ static running_scoop_t* _board_id_to_scoop(char const* board_id);
 /* Launch the given scoop configuration in a job and set the returned job id in scoop
  *
  */
-static int _launch_scoop_job(running_scoop_t* scoop_to_launch);
+static int _launch_scoop_job(running_scoop_t* scoop, struct node_record* node);
 
 
 /* Takes a slurm address and converts it to a string representing the ip
@@ -226,13 +228,19 @@ static char* _addr2ip(slurm_addr_t const* addr);
 // slurm required functions
 int init(void)
 {
+	mutex_running_scoops_l = xmalloc(sizeof(pthread_mutex_t));
+	slurm_mutex_init(mutex_running_scoops_l);
 	running_scoops_l = list_create(_destroy_running_scoop);
 	info("Loaded %s", plugin_type);
 	return SLURM_SUCCESS;
 }
 void fini(void)
 {
+	slurm_mutex_lock(mutex_running_scoops_l);
 	list_destroy(running_scoops_l);
+	slurm_mutex_unlock(mutex_running_scoops_l);
+	slurm_mutex_destroy(mutex_running_scoops_l);
+	xfree(mutex_running_scoops_l);
 }
 
 // main plugin function
@@ -273,6 +281,17 @@ extern int job_submit(struct job_descriptor* job_desc, uint32_t submit_uid, char
 			goto CLEANUP;
 		}
 	}
+
+	if (parsed_options[_option_lookup("start_scoop")].num_arguments > 0)
+	{
+		if (_launch_scoops(parsed_options) != HAGEN_DAAS_PLUGIN_SUCCESS)
+		{
+			snprintf(my_errmsg, MAX_LENGTH_ERROR, "_launch_scoops: %s", function_error_msg);
+			retval = SLURM_ERROR;
+			goto CLEANUP;
+		}
+	}
+
 	retval = SLURM_SUCCESS;
 
 CLEANUP:
@@ -404,18 +423,26 @@ static int _set_env(job_desc_msg_t* job, running_scoop_t* scoop)
 	}
 	info("job->environment (pre): %p", (void*) job->environment);
 
-	if (env_array_append(&job->environment, ENV_NAME_QUIGGELDY_IP, scoop->ip) != 1)
+	if (env_array_append(&job->environment, env_name_quiggeldy_ip, scoop->ip) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
-	if (env_array_append_fmt(&job->environment, ENV_NAME_QUIGGELDY_PORT, "%d", scoop->service->port) != 1)
+	++job->env_size;
+
+	if (env_array_append_fmt(&job->environment, env_name_quiggeldy_port, "%d", scoop->service->port) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
+	++job->env_size;
+
+	if (env_array_append(&job->environment, env_name_board_id, scoop->board_id) != 1)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	++job->env_size;
+
 	info("job->environment (post): %p", (void*) job->environment);
 	info("# elements in env (xsize, post): %zu", xsize(*job->environment) / sizeof(char*));
-
-	job->env_size += 2;
 
 	size_t i;
 	for (i=0; i<job->env_size; ++i)
@@ -521,6 +548,8 @@ static int _prepare_job(struct job_descriptor* job_desc, option_entry_t* parsed_
 	char* board_id = option_dbid->arguments[0];
 
 	// first, see if the scoop is already running and get the information from there
+	// note that we do not lock the mutex_running_scoops_l because there cant be a race condition
+	// -> the node where the scoop is located does not depend on whether it is running
 	running_scoop_t* scoop = _board_id_to_scoop(board_id);
 	bool scoop_running = scoop != NULL;
 
@@ -555,22 +584,69 @@ static int _prepare_job(struct job_descriptor* job_desc, option_entry_t* parsed_
 	return retval;
 }
 
-static int _launch_scoops(job_desc_msg_t* job, option_entry_t* parsed_options)
+static int _launch_scoops(option_entry_t* parsed_options)
 {
 	option_entry_t* option_scoop = &parsed_options[_option_lookup("start_scoop")];
+	char const* board_id;
 	size_t i;
 	running_scoop_t* scoop;
 
+	slurm_mutex_lock(mutex_running_scoops_l);
 	// check if scoop is running
 	for (i=0; i < option_scoop->num_arguments; ++i)
 	{
-		scoop = _board_id_to_scoop(option_scoop->arguments[i]);
+		board_id = option_scoop->arguments[i];
+		scoop = _board_id_to_scoop(board_id);
+
+		if (scoop != NULL)
+		{
+			// TODO verify that job is still running
+
+			// TODO think about possible race condition if the job terminates
+			// possible solution: have another utility send a ping..
+		}
+
 		// if scoop is running -> nothing to do
 		if (scoop == NULL)
 		{
-			/* _launch_scoop_job(); */
+			// if the scoop is not running, we have to look up where it would run so that the job has these information
+			service_t const* service = _board_id_to_service(board_id);
+			struct node_record* node = _gres_to_node(board_id);
+
+			scoop = _build_scoop(board_id, node, service);
+
+			// _launch_scoop_job sets the job_id
+			if ((_launch_scoop_job(scoop, node) != HAGEN_DAAS_PLUGIN_SUCCESS)
+				|| (scoop->job_id == HAGEN_DAAS_PLUGIN_FAILURE))
+			{
+				slurm_mutex_unlock(mutex_running_scoops_l);
+				return HAGEN_DAAS_PLUGIN_FAILURE;
+			}
+			list_append(running_scoops_l, scoop);
+		}
+		else
+		{
+			info("Scoop is already running in job #%d", scoop->job_id);
 		}
 	}
+	slurm_mutex_unlock(mutex_running_scoops_l);
+
+	return HAGEN_DAAS_PLUGIN_SUCCESS;
+}
+
+static int _launch_scoop_job(running_scoop_t* scoop, struct node_record* node)
+{
+	if (scoop == NULL)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	info("Launching %s on %s", scoop->service->service_name, node->node_hostname);
+
+	// TODO: launch job
+
+	// TODO: adjust job id
+	scoop->job_id = 12345;
+	
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
@@ -584,19 +660,26 @@ static running_scoop_t* _build_scoop(char const* board_id, struct node_record co
 	strcpy(scoop->ip, ip);
 	xfree(ip);
 
-	scoop->job_id = -1;
+	scoop->job_id = HAGEN_DAAS_PLUGIN_FAILURE;
 	scoop->service = service;
 
 	return scoop;
 }
-
 
 static int _cmp_scoops_by_board_id(void* x, void* key)
 {
 	running_scoop_t* scoop = x;
 	char const* board_id = key;
 
-	return xstrcmp(scoop->board_id, board_id);
+	// because everything is defined differently..
+	if (xstrcmp(scoop->board_id, board_id) == 0)
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
 }
 
 static running_scoop_t* _board_id_to_scoop(char const* board_id)
