@@ -44,9 +44,13 @@
 
 const char env_name_quiggeldy_ip[] = "QUIGGELDY_IP";
 const char env_name_quiggeldy_port[] = "QUIGGELDY_PORT";
+
+
+// hagen daas defines
+
 const char env_name_board_id[] = "HAGEN_DAAS_BOARD";
 
-const char jobname_prefix_quiggeldy[] = "quiggeldy_";
+const char jobname_prefix_scoop[] = "quiggeldy_";
 
 // SLURM plugin definitions
 const char plugin_name[] = "Job submit 'howto avoid grabbing emulators nightlong - DLS as a Service' plugin. "
@@ -91,7 +95,8 @@ typedef struct service
 
 #define NUM_SERVICES 3
 static const service_t service_infos[NUM_SERVICES] = {
-	{ "dls-v2",   "quiggeldy", 5666, 600, 900 },
+	{ "dls-v2",   "sleep 600", 5666, 600, 900 },
+	// { "dls-v2",   "quiggeldy", 5666, 600, 900 },
 	{ "dls-v3",   "quiggeldy", 5667, 600, 900 },
 	{ "hicann-x", "quiggeldy", 5668, 600, 900 },
 };
@@ -182,6 +187,12 @@ static const service_t* _get_service(char const* service_name);
  *
  */
 static int _set_env(job_desc_msg_t* job, running_scoop_t* scoop);
+
+
+/* Set script of a job description to contain the given executable of 
+ *
+ */
+static int _set_executable(job_desc_msg_t* job, char const* executable);
 
 
 /* Prepare the user submitted job.
@@ -456,6 +467,28 @@ static int _set_env(job_desc_msg_t* job, running_scoop_t* scoop)
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
+static int _set_executable(job_desc_msg_t* job, char const* executable)
+{
+	char const preamble[] = "#!/bin/sh";
+
+	size_t length_script = strlen(preamble) + strlen(executable) + 3; // newlines below and \0
+
+	job->script = xmalloc(sizeof(char) * length_script);
+
+	if (job->script == NULL)
+	{
+		snprintf(
+			function_error_msg, MAX_LENGTH_ERROR,
+			"Could not set executable in scoop batch job.");
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+
+	// similar to sbatch --wrap
+	sprintf(job->script, "%s\n\n%s\n", preamble, executable);
+
+	return HAGEN_DAAS_PLUGIN_SUCCESS;
+}
+
 static service_t const* _board_id_to_service(char const* board_id)
 {
 	return _get_service(_board_id_to_service_name(board_id));
@@ -642,10 +675,37 @@ static int _launch_scoop_job(running_scoop_t* scoop, struct node_record* node)
 	}
 	info("Launching %s on %s", scoop->service->service_name, node->node_hostname);
 
-	// TODO: launch job
+	job_desc_msg_t* job = xmalloc(sizeof(job_desc_msg_t));
+	slurm_init_job_desc_msg(job);
 
-	// TODO: adjust job id
-	scoop->job_id = 12345;
+	if (_set_executable(job, scoop->service->executable) != HAGEN_DAAS_PLUGIN_SUCCESS)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	job->req_nodes = xstrdup(node->node_hostname);
+
+	size_t name_len = strlen(jobname_prefix_scoop) + strlen(scoop->board_id) + 1;
+	job->name = xmalloc(sizeof(char) * name_len);
+	memset(job->name, 0, name_len);
+	sprintf(job->name, "%s%s", jobname_prefix_scoop, scoop->board_id);
+
+	// TODO: set further requirements such as partitions etc
+
+	// check if scoop could run immediately - this should always be the case because
+	// the compute node is already allocated at this point and should either be able to continue or fail
+	if (slurm_job_will_run(job) != SLURM_SUCCESS) {
+		snprintf(
+			function_error_msg, MAX_LENGTH_ERROR, "Scoop would not run immediately.");
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+
+	submit_response_msg_t* resp = NULL;
+	if (slurm_submit_batch_job(job, &resp) != SLURM_SUCCESS)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	scoop->job_id = resp->job_id;
+	slurm_free_submit_response_response_msg(resp);
 	
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
