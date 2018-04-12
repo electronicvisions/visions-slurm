@@ -21,6 +21,7 @@
 #include "src/common/node_conf.h"
 #include "src/common/xstring.h"
 #include "src/slurmctld/slurmctld.h"
+#include "src/slurmctld/locks.h"
 
 #define SPANK_OPT_PREFIX "_SLURM_SPANK_OPTION_hagen_daas_opts_"
 
@@ -117,7 +118,7 @@ static void _destroy_running_scoop(void* ptr)
 
 
 // TODO add mutex/lookup slurm lock implementation
-static pthread_mutex_t* mutex_running_scoops_l;
+static pthread_mutex_t mutex_running_scoops_l = PTHREAD_MUTEX_INITIALIZER;
 static List running_scoops_l;
 
 
@@ -232,6 +233,10 @@ static int _launch_scoop_job(running_scoop_t* scoop, struct node_record* node);
 static char* _addr2ip(slurm_addr_t const* addr);
 
 
+/* Setup job_desc_msg_t to be used in a scoop job
+ */
+static int _scoop_job_init(job_desc_msg_t* job, running_scoop_t* scoop, struct node_record* node);
+
 /***********************\
 * function definition *
 \***********************/
@@ -239,19 +244,16 @@ static char* _addr2ip(slurm_addr_t const* addr);
 // slurm required functions
 int init(void)
 {
-	mutex_running_scoops_l = xmalloc(sizeof(pthread_mutex_t));
-	slurm_mutex_init(mutex_running_scoops_l);
 	running_scoops_l = list_create(_destroy_running_scoop);
 	info("Loaded %s", plugin_type);
 	return SLURM_SUCCESS;
 }
 void fini(void)
 {
-	slurm_mutex_lock(mutex_running_scoops_l);
+	slurm_mutex_lock(&mutex_running_scoops_l);
 	list_destroy(running_scoops_l);
-	slurm_mutex_unlock(mutex_running_scoops_l);
-	slurm_mutex_destroy(mutex_running_scoops_l);
-	xfree(mutex_running_scoops_l);
+	slurm_mutex_unlock(&mutex_running_scoops_l);
+	slurm_mutex_destroy(&mutex_running_scoops_l);
 }
 
 // main plugin function
@@ -624,7 +626,7 @@ static int _launch_scoops(option_entry_t* parsed_options)
 	size_t i;
 	running_scoop_t* scoop;
 
-	slurm_mutex_lock(mutex_running_scoops_l);
+	slurm_mutex_lock(&mutex_running_scoops_l);
 	// check if scoop is running
 	for (i=0; i < option_scoop->num_arguments; ++i)
 	{
@@ -652,7 +654,7 @@ static int _launch_scoops(option_entry_t* parsed_options)
 			if ((_launch_scoop_job(scoop, node) != HAGEN_DAAS_PLUGIN_SUCCESS)
 				|| (scoop->job_id == HAGEN_DAAS_PLUGIN_FAILURE))
 			{
-				slurm_mutex_unlock(mutex_running_scoops_l);
+				slurm_mutex_unlock(&mutex_running_scoops_l);
 				return HAGEN_DAAS_PLUGIN_FAILURE;
 			}
 			list_append(running_scoops_l, scoop);
@@ -662,7 +664,7 @@ static int _launch_scoops(option_entry_t* parsed_options)
 			info("Scoop is already running in job #%d", scoop->job_id);
 		}
 	}
-	slurm_mutex_unlock(mutex_running_scoops_l);
+	slurm_mutex_unlock(&mutex_running_scoops_l);
 
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
@@ -675,35 +677,42 @@ static int _launch_scoop_job(running_scoop_t* scoop, struct node_record* node)
 	}
 	info("Launching %s on %s", scoop->service->service_name, node->node_hostname);
 
-	job_desc_msg_t* job = xmalloc(sizeof(job_desc_msg_t));
-	slurm_init_job_desc_msg(job);
+	job_desc_msg_t job;
 
-	if (_set_executable(job, scoop->service->executable) != HAGEN_DAAS_PLUGIN_SUCCESS)
+	if (_scoop_job_init(&job, scoop, node) != HAGEN_DAAS_PLUGIN_SUCCESS)
 	{
+		snprintf(
+			function_error_msg, MAX_LENGTH_ERROR, "Could not init scoop job_desc_msg_t.");
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
-	job->req_nodes = xstrdup(node->node_hostname);
 
-	size_t name_len = strlen(jobname_prefix_scoop) + strlen(scoop->board_id) + 1;
-	job->name = xmalloc(sizeof(char) * name_len);
-	memset(job->name, 0, name_len);
-	sprintf(job->name, "%s%s", jobname_prefix_scoop, scoop->board_id);
+	// In order to be able to schedule another job, we need to unlock the read lock
+	// until we retake control
 
-	// TODO: set further requirements such as partitions etc
+	/* Locks: Read config, read job, read node, read partition */
+	slurmctld_lock_t job_read_lock = {
+		READ_LOCK, READ_LOCK, READ_LOCK, READ_LOCK, READ_LOCK };
+	unlock_slurmctld(job_read_lock);
 
 	// check if scoop could run immediately - this should always be the case because
 	// the compute node is already allocated at this point and should either be able to continue or fail
-	if (slurm_job_will_run(job) != SLURM_SUCCESS) {
+	info("_launch_scoop_job: Checking if job would run immediately..");
+	if (slurm_job_will_run(&job) != SLURM_SUCCESS) {
 		snprintf(
 			function_error_msg, MAX_LENGTH_ERROR, "Scoop would not run immediately.");
+		lock_slurmctld(job_read_lock);
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 
+	info("_launch_scoop_job: Submitting job..");
 	submit_response_msg_t* resp = NULL;
-	if (slurm_submit_batch_job(job, &resp) != SLURM_SUCCESS)
+	if (slurm_submit_batch_job(&job, &resp) != SLURM_SUCCESS)
 	{
+		lock_slurmctld(job_read_lock);
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
+	lock_slurmctld(job_read_lock);
+
 	scoop->job_id = resp->job_id;
 	slurm_free_submit_response_response_msg(resp);
 	
@@ -747,4 +756,34 @@ static running_scoop_t* _board_id_to_scoop(char const* board_id)
 	return (running_scoop_t*) list_find_first(running_scoops_l, _cmp_scoops_by_board_id, (void *) board_id);
 }
 
+static int _scoop_job_init(job_desc_msg_t* job, running_scoop_t* scoop, struct node_record* node)
+{
+	slurm_init_job_desc_msg(job);
+
+	if (_set_executable(job, scoop->service->executable) != HAGEN_DAAS_PLUGIN_SUCCESS)
+	{
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	job->req_nodes = xstrdup(node->node_hostname);
+
+	size_t name_len = strlen(jobname_prefix_scoop) + strlen(scoop->board_id) + 1;
+	job->name = xmalloc(sizeof(char) * name_len);
+	memset(job->name, 0, name_len);
+	sprintf(job->name, "%s%s", jobname_prefix_scoop, scoop->board_id);
+
+	/* env_array_for_batch_job */
+	job->user_id = getuid();
+
+	extern char** environ;
+	job->environment = env_array_create();
+	env_array_merge_slurm(&job->environment,
+				  (const char **)environ);
+
+	info("Environment set to: %p", job->environment);
+
+	// TODO: set further requirements such as partitions etc
+
+
+	return HAGEN_DAAS_PLUGIN_SUCCESS;
+}
 // vim: sw=4 ts=4 sts=4 noexpandtab tw=120

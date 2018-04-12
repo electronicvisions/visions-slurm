@@ -220,14 +220,18 @@ extern int job_submit_plugin_submit(struct job_descriptor *job_desc,
 
 	START_TIMER;
 	rc = job_submit_plugin_init();
-	slurm_mutex_lock(&g_context_lock);
+    // TODO: Make reentrance of slurm plugins configurable -> own PR
+    info("job_submit_plugin_submit: Trying to lock job_submit mutex.");
+	/* slurm_mutex_lock(&g_context_lock); */
+    info("Mutex locked, runnning %d job_submit plugins..", g_context_cnt);
 	/* NOTE: On function entry read locks are set on config, job, node and
 	 * partition structures. Do not attempt to unlock them and then
 	 * lock again (say with a write lock) since doing so will trigger
 	 * a deadlock with the g_context_lock above. */
 	for (i = 0; ((i < g_context_cnt) && (rc == SLURM_SUCCESS)); i++)
 		rc = (*(ops[i].submit))(job_desc, submit_uid, err_msg);
-	slurm_mutex_unlock(&g_context_lock);
+	/* slurm_mutex_unlock(&g_context_lock); */
+    info("job_submit_plugin_submit: job_submit mutex unlocked.");
 	END_TIMER2("job_submit_plugin_submit");
 
 	return rc;
