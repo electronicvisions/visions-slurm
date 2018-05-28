@@ -4,6 +4,7 @@ SUBDIRS = \
 	all_partitions \
 	cray_aries \
 	defaults \
+	nmpm_custom_resource \
 	logging \
 	lua \
 	partition \
