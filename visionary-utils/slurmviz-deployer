@@ -1,0 +1,131 @@
+#!/bin/bash
+
+# This is a set of scripts used to semi-automatically build and install slurm
+# in our custom singularity-based deployment in a virtual machine.
+
+# Originally by Kai Husman, adapted by Oliver Breitwieser
+
+SOURCE=$PWD
+SCRIPTNAME="$(realpath -P "$0")"
+PATH_UTILS="$(dirname ${SCRIPTNAME})"
+SLURM_USER="slurm"
+test -f "${SOURCE}/slurmviz-deployer" || { echo "slurmviz-deployer not found in current directory"; exit 1; }
+test -f "${SOURCE}/AUTHORS" || { echo "We are not in the sluvmiz repository, are we?"; exit 1; }
+
+test -n "$1" || { echo "ERR: Please specify command (inside container: autogen, configure, build, install, deploy_utils, testlib; outside: all)."; exit 1; }
+
+set -o xtrace
+
+source "${PATH_UTILS}/slurmviz-commons.sh" || { echo "Could not load commons, aborting!"; exit 1; }
+
+cmd_autogen() {
+  test $UID -eq 0 && { echo "You must NOT be root, channel your inner slurm user instead!"; exit 1; }
+
+  pushd ${SOURCE}
+    setup_compile_dependencies
+    ./autogen.sh
+  popd
+}
+
+cmd_configure() {
+  test $UID -eq 0 && { echo "You must NOT be root, channel your inner slurm user instead!"; exit 1; }
+
+  pushd ${SOURCE}
+    export_hwdb_env
+    setup_compile_dependencies
+    ./configure $(get_config_opts)
+  popd
+}
+
+cmd_build() {
+  test $UID -eq 0 && { echo "You must NOT be root, channel your inner slurm user instead!"; exit 1; }
+
+  # TODO change this, we want to explicitly load the paths needed to build, and
+  # state those we need to run it
+  pushd ${SOURCE}
+    export_hwdb_env
+    setup_compile_dependencies
+    make -j $(nproc)
+  popd
+}
+
+cmd_clean() {
+  test $UID -eq 0 && { echo "You must NOT be root, channel your inner slurm user instead!"; exit 1; }
+  pushd ${SOURCE}
+    make clean
+  popd
+}
+
+cmd_install() {
+  systemd_slurm test || {
+    echo -e "Stop slurm prior running this:\\n";
+    echo -e "\\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }
+
+  test $UID -eq 0 && { echo "You must NOT be root"; exit 1; }
+
+  INSTALL_WAFER_RES_OPTS=${DEPLOY_ROOT}/lib/slurm/wafer_res_opts.so
+  pushd ${SOURCE}
+    rm ${INSTALL_WAFER_RES_OPTS} || true
+
+    export_hwdb_env
+    setup_compile_dependencies
+
+    make install
+    pushd spank_plugins
+      gcc -shared -fPIC -I${SOURCE} -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
+    popd
+  popd
+}
+
+cmd_deploy_utils() {
+  echo "Installing utilities"
+  install -v -m 555 -o slurm -g slurm "${PATH_UTILS}/slurmviz-commons.sh" "${DEPLOY_ROOT}/bin"
+  install -v -m 555 -o slurm -g slurm "${PATH_UTILS}/singularity-commands.sh" "${DEPLOY_ROOT}/bin"
+  install -v -m 555 -o slurm -g slurm "${PATH_UTILS}/clusterize" "${DEPLOY_ROOT}/bin"
+}
+
+cmd_testlib() {
+  # test for some files to check if stuff was compiled correctly:
+  set errexit
+  test -f ${DEPLOY_ROOT}/lib/slurm/jobcomp_elasticsearch.so
+  test -f ${DEPLOY_ROOT}/lib/slurm/job_submit_nmpm_custom_resource.so
+  echo "basic tests passed"
+}
+
+cmd_all() {
+  systemd_slurm test || { echo -e "Stop slurm prior running this:\n\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }
+
+  setup_singularity
+
+  test $UID -eq 0 || { echo "You must be root"; exit 1; }
+
+  SOURCE_OWNER=$(stat -c '%U' $(realpath -P "$0"))
+  test "$SOURCE_OWNER" != "root" || echo "$0 should not be owned by root"
+
+  pushd ${SOURCE}
+    for cmd in autogen configure build install testlib; do
+      sudo -u ${SLURM_USER} ${SCRIPTNAME} ${cmd}
+    done
+  popd
+  ${CMD_SEXEC} $0 deploy_utils
+
+  echo "" >&2
+  echo "Installed slurm, do not forget to start the corresponding services:" >&2
+  echo -e "\\tsystemctl start slurm{ctl,db}d@${INSTALL_TYPE}" >&2
+  echo "" >&2
+}
+
+# run most commands within the container (all except all/deploy_utils)
+if  [ "$1" = "all" ] || [ "$1" = "deploy_utils" ]; then
+  cmd_$1
+else
+  # check if we are run within singularity
+  if [ -n "${SINGULARITY_NAME+x}" ]; then
+    # we are in the container
+    cmd_$1
+  else
+    setup_singularity
+
+    ${CMD_SEXEC} $0 $1
+  fi
+fi

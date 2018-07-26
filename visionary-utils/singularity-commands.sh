@@ -1,0 +1,99 @@
+#!/bin/bash
+
+if [ -z "${INSTALL_TYPE}" ]; then
+    echo "\$INSTALL_TYPE is not defined, this should not happen!" >&2
+    return
+fi
+
+# first check for locally installed singularity 3.0+
+if [ -f /usr/local/bin/singularity ]; then
+    SINGULARITY_BIN="/usr/local/bin/singularity"
+else
+    SINGULARITY_BIN="/usr/bin/singularity"
+fi
+CLUSTER_CONTAINER="${PREFIX}/container"
+
+add_if_exists() {
+    # Usage: add_if_exists <source> <target>
+    # Add `source` to container under `target` (if specified)
+    # NOTE: add_if_exists omits the newline to allow for mount options!
+    [ -d "$1" ] && echo -n "-B $1" && [ -n "$2" ] && echo -n ":$2"
+}
+
+generate_singularity_cmd_prefix() {
+(
+echo "${SINGULARITY_BIN}"
+# suppress warnings unless env variable is set
+[ -z ${CLUSTERIZE_VERBOSE+x} ] && echo "-s"
+) | tr \\n ' '
+}
+
+generate_singularity_cmd_suffix() {
+(
+if [ $UID -eq 0 ] && [ -f /usr/local/bin/singularity ]; then
+    # Allow SUID mounts when running as root (i.e. for slurmd).
+    # This option was introduced in singularity 3.0+.
+    echo "--allow-setuid"
+fi
+# BEGIN bind options
+cat <<EOF
+--app visionary-wafer
+$(add_if_exists "${PREFIX}" /opt/slurm)
+$(add_if_exists "${PREFIX}")
+$(add_if_exists "/etc/singularity")
+$(add_if_exists "/usr/local/etc/singularity")
+$(add_if_exists "${HWDB_ROOT}")
+$(add_if_exists /run/mysqld)
+$(add_if_exists /run/nscd)
+$(add_if_exists "/var/lib/${INSTALL_TYPE}" /var/lib/slurm)
+$(add_if_exists "/var/log/${INSTALL_TYPE}" /var/log/slurm)
+$(add_if_exists "/run/${INSTALL_TYPE}" /run/slurm)
+-B /sys/fs/cgroup:/opt/cgroup
+-B /etc/group
+EOF
+for stomount in {loh,scratch,wang,ley,fasthome}; do
+    add_if_exists "/${stomount}"
+    echo ""
+done
+
+# backward-compatibility for hel
+if [ "$(hostname)" = "helvetica" ]; then
+    if [[ "$INSTALL_TYPE" == *-testing ]]; then
+        echo "-B /opt/munge-testing/var/run/munge:/run/munge"
+    else
+        echo "-B /opt/munge-skretch/var/run/munge:/run/munge"
+    fi
+elif [[ "$INSTALL_TYPE" == *-testing ]]; then
+    # we are in the testing build, use the testing munge
+    add_if_exists /run/munge-testing /run/munge
+    echo ""
+else
+    echo "-B /run/munge"
+fi
+# in order to not conflict with the old installation, we need to mount slurm
+# configuration files to /etc/slurm-config
+echo "-B ${DEPLOY_ROOT}/etc:/etc/slurm-config:ro"
+# Add all libraries udevadm needs on the cluster nodes because that is where
+# spikeys are attached.
+# TODO: Re-enable
+# if [[ "$(hostname)" = "HBPHost"* ]]; then
+#     ldd "$(which udevadm)" | awk '( $3 ~ /^\/.*/ ) { print "-B", $3 }'
+#     echo "-B /sbin/udevadm"
+# fi
+if [ "${PWD}" != "/" ]; then
+    echo "-B ${PWD}"
+fi
+# END bind options
+
+echo "${CLUSTER_CONTAINER}"
+) | tr \\n ' '
+}
+
+SINGULARITY_CMD_PREFIX="$(generate_singularity_cmd_prefix)"
+SINGULARITY_CMD_SUFFIX="$(generate_singularity_cmd_suffix)"
+
+export CMD_SEXEC="${SINGULARITY_CMD_PREFIX} exec ${SINGULARITY_CMD_SUFFIX}"
+export CMD_SSHELL="${SINGULARITY_CMD_PREFIX} shell ${SINGULARITY_CMD_SUFFIX}"
+
+alias sexec="${CMD_SEXEC}"
+alias sshell="${CMD_SSHELL}"
