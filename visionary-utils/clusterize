@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# support symlinking cluserize to some other location and then lookup the name
+# of the link inside the container
+# Useful for scontrol, srun, sbatch etc...
+if [ "$(basename "$0")" != "clusterize" ]; then
+  WRAPPED_CMD=("$(basename "$0")" "$@")
+else
+  WRAPPED_CMD=("$@")
+fi
+
+SCRIPTPATH="$(realpath -P "${BASH_SOURCE[0]}")"
+
+source "$(dirname "${SCRIPTPATH}")/slurmviz-commons.sh" || {
+  echo "Could not load commons, aborting!" >&2; exit 1; }
+
+# exit early if no arguments supplied
+if [ ${#WRAPPED_CMD} -eq 0 ]; then
+  cat <<EOF >&2
+
+Usage: $(basename ${SCRIPTPATH}) ARGS...
+
+Execute the given arguments in a singularity image prepared for slurm to
+operate in.
+EOF
+  exit 0
+fi
+
+if [ -z "${SINGULARITY_NAME}" ]; then
+  # escape user supplied SINGULARITYENV-variables so that they are available
+  # for nested singularity calls from the slurmd-container
+  escape_singularity_env
+  if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
+    echo "# The following SINGULARITYENV_ variables are defined:"
+    env | grep "^SINGULARITYENV_" | sed "s:^:# :"
+  fi
+
+  # we are not in singularity container -> chroot into it
+  setup_singularity
+  if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
+    echo "# Running: " ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}"
+  fi
+  ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}"
+else
+  # we are in singularity container -> prepare env
+  export_slurm_env
+  export_hwdb_env
+
+  # No call to setup_compile_dependencies necessary because visionary-wafer and
+  # visionary-slurmviz contain all dependencies for hwdb and slurm.
+  export_spack_view visionary-wafer
+  export_spack_view visionary-slurmviz
+
+  # restore variables for singularity containers
+  restore_singularity_env
+
+  # stupid symlink because mysql cannot be configured
+  ln -sf /run/mysqld/mysqld.sock /tmp/mysql.sock
+
+  # there is an existing slurm config (probably from the jessie cluster) that
+  # will probably be mounted into singularity container -> work around it by
+  # mounting to /etc/slurm-config and adjust SLURM_CONF environment variable
+  # in container
+  export SLURM_CONF="/etc/slurm-config/slurm.conf"
+
+  "${WRAPPED_CMD[@]}"
+fi
