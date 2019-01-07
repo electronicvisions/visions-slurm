@@ -1,6 +1,6 @@
 /*****************************************************************************\
  *  job_submit_nmpm_custom_resource.c - Manages hardware resources of the
- *  neuromorphic physical model platfrom via additional spank plugin options
+ *  neuromorphic physical model platform via additional spank plugin options
 \*****************************************************************************/
 
 #include <inttypes.h>
@@ -119,9 +119,9 @@ static int _option_lookup(char const* option_string);
 /* parses the options from the spank job environment given by job_desc and converts them to
  job_entries. zero_res_args is true if no spank options regarding nmpm resource management where found */
 static int _parse_options(
-    struct job_descriptor const* job_desc,
-    option_entry_t* parsed_options,
-    bool* zero_res_args);
+	struct job_descriptor const* job_desc,
+	option_entry_t* parsed_options,
+	bool* zero_res_args);
 
 /* takes string of a "-with-aout" option, and sets aout of either 0/1 when aout was specified via
  * colon delimiter
@@ -140,7 +140,7 @@ static int _add_reticle(size_t reticle_id, int aout, wafer_res_t* allocated_modu
 static int _add_fpga_of_hicann(size_t hicann_id, int aout, wafer_res_t* allocated_module);
 
 /* checks if HICANN is in hwdb and sets HICANN active in wafer_res_t
- * also sets correspondig fpga active
+ * also sets corresponding fpga active
  * if aout is > -1 _add_adc will be called */
 static int _add_hicann(size_t hicann_id, int aout, wafer_res_t* allocated_module);
 
@@ -148,7 +148,7 @@ static int _add_hicann(size_t hicann_id, int aout, wafer_res_t* allocated_module
  * valid aout values are 0/1 to get one of the two corresponding ADCs or 2 for both */
 static int _add_adc(size_t fpga_id, int aout, wafer_res_t* allocated_module);
 
-/* adds requested triggergroup of corresponding fpga */
+/* adds requested trigger group of corresponding fpga */
 static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module);
 
 /***********************\
@@ -165,7 +165,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	size_t optioncounter, argcount;
 	option_entry_t parsed_options[NUM_OPTIONS]; // holds all parsed options
 	//FIXME make allocated_modules dynamic size
-	wafer_res_t allocated_modules[MAX_ALLOCATED_MODULES]; //holds info which HICANNs, FPGAs and ADC were requeste
+	wafer_res_t allocated_modules[MAX_ALLOCATED_MODULES]; //holds info which HICANNs, FPGAs and ADC were requested
 	size_t num_allocated_modules = 0; //track number of modules, used as index for allocated_modules
 	char my_errmsg[MAX_ERROR_LENGTH]; //string for temporary error message
 	char* hwdb_path = NULL;
@@ -358,7 +358,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 				goto CLEANUP;
 			}
 			if (_add_fpga_of_hicann(hicann_id, -1, &allocated_modules[0]) != NMPM_PLUGIN_SUCCESS) {
-				snprintf(my_errmsg, MAX_ERROR_LENGTH, "Adding Reticle of HICANN wihtou aout %s failed: %s", parsed_options[_option_lookup("reticle_of_hicann_without_aout")].arguments[argcount], function_error_msg);
+				snprintf(my_errmsg, MAX_ERROR_LENGTH, "Adding Reticle of HICANN without aout %s failed: %s", parsed_options[_option_lookup("reticle_of_hicann_without_aout")].arguments[argcount], function_error_msg);
 				retval = ESLURM_INVALID_LICENSES;
 				goto CLEANUP;
 			}
@@ -427,7 +427,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		bool has_fpga_entry;
 		int aout;
 		for (modulecounter = 0; modulecounter < num_allocated_modules; modulecounter++) {
-			// add all FPGAs with all possbile ADCs
+			// add all FPGAs with all possible ADCs
 			for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
 				if(hwdb4c_has_fpga_entry(hwdb_handle, allocated_modules[modulecounter].wafer_id * NUM_FPGAS_ON_WAFER + fpgacounter, &has_fpga_entry) != HWDB4C_SUCCESS) {
 					snprintf(my_errmsg, MAX_ERROR_LENGTH, "Adding whole Module %zu: FPGAOnWafer out of range %zu, this should never happen?!?", allocated_modules[modulecounter].wafer_id, fpgacounter);
@@ -501,7 +501,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	char adc_env_name[] = "ALLOCATED_ADC=";
 	adc_environment_string = malloc(sizeof(char) * (num_allocated_modules * MAX_ADC_ENV_LENGTH_PER_WAFER + strlen(adc_env_name)));
 	if(adc_environment_string == NULL) {
-		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Memory alloc for ADC envrionment string failed");
+		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Memory alloc for ADC environment string failed");
 		retval = SLURM_ERROR;
 		goto CLEANUP;
 	}
