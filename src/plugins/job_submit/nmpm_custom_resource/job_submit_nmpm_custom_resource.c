@@ -20,6 +20,7 @@
 #include <sys/types.h>
 
 #include "hwdb4cpp/hwdb4c.h"
+#include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
 #include "src/common/slurm_xlator.h"
 #include "src/slurmctld/slurmctld.h"
@@ -57,8 +58,10 @@ typedef struct wafer_res {
 	size_t wafer_id;
 	bool active_hicanns[NUM_HICANNS_ON_WAFER];
 	bool active_fpgas[NUM_FPGAS_ON_WAFER];
+	bool active_fpga_neighbor[NUM_FPGAS_ON_WAFER];
 	char active_adcs[MAX_ADCS_PER_WAFER][MAX_ADC_COORD_LENGTH];
 	bool active_trigger[NUM_TRIGGER_PER_WAFER];
+	bool active_hicann_neighbor[NUM_HICANNS_ON_WAFER];
 	size_t num_active_adcs;
 } wafer_res_t;
 
@@ -75,7 +78,7 @@ typedef struct option_index {
 } option_index_t;
 
 //global array of valid options
-#define NUM_OPTIONS 17
+#define NUM_OPTIONS 19
 // options that are only valid if single wafer option is given
 #define WMOD_DEPENDENT_MIN_INDEX 4
 #define WMOD_DEPENDENT_MAX_INDEX 11
@@ -97,6 +100,8 @@ static const option_index_t custom_res_options[NUM_OPTIONS] = {
 	{ "fpga_without_aout",               9},
 	{ "hicann_without_aout",            10},
 	{ "reticle_of_hicann_without_aout", 11},
+	{ "skip_hicann_init",               12},
+	{ "force_hicann_init",              13},
 };
 
 // global handle of hwdb
@@ -159,6 +164,14 @@ static int _add_adc(size_t fpga_id, int aout, wafer_res_t* allocated_module);
 /* adds requested trigger group of corresponding fpga */
 static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module);
 
+/* Check if neighboring HICANNs exist and set those as active_hicann_neighbors
+ * except if they are already active HICANNs. Same is done for corresponding FPGAs */
+static int _add_neighbors(size_t hicann_id, wafer_res_t *allocated_module);
+
+/* Helper function for _add_neighbors(). Checks if neighbor hicann exists and sets it active
+ * if the neighboring hicann itself is not active. Same is done for the corresponding FPGA */
+static int _allocate_neighbor(size_t hicann_id, wafer_res_t *allocated_module, int (*get_neighbor)(size_t, size_t*));
+
 /***********************\
 * function definitions *
 \***********************/
@@ -182,10 +195,16 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	bool skip_master_alloc = false;
 	bool without_trigger = false;
 	bool at_least_one_adc_allocated = false;
+	bool skip_hicann_init = false;
+	bool force_hicann_init = false;
 	size_t counter;
 	size_t modulecounter;
 	char* slurm_licenses_string = NULL;
 	char* slurm_licenses_environment_string = NULL;
+	char* slurm_neighbor_hicanns_environment_string = NULL;
+	char* slurm_neighbor_licenses_raw_string = NULL;
+	char* slurm_neighbor_licenses_environment_string = NULL;
+	char* slurm_hicann_init_envvar = NULL; // holds info about automated hicann init
 	char* hicann_environment_string = NULL;
 	char* adc_environment_string = NULL;
 	int retval = SLURM_ERROR;
@@ -270,6 +289,31 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		without_trigger = true;
 	}
 
+	if (parsed_options[_option_lookup("skip_hicann_init")].num_arguments == 1) {
+		if (strcmp(parsed_options[_option_lookup("skip_hicann_init")].arguments[0], NMPM_MAGIC_BINARY_OPTION) != 0) {
+			snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid magic skip_hicann_init argument %s", parsed_options[_option_lookup("skip_hicann_init")].arguments[0]);
+			retval = SLURM_ERROR;
+			goto CLEANUP;
+		}
+		skip_hicann_init = true;
+	}
+
+	if (parsed_options[_option_lookup("force_hicann_init")].num_arguments == 1) {
+		if (strcmp(parsed_options[_option_lookup("force_hicann_init")].arguments[0], NMPM_MAGIC_BINARY_OPTION) != 0) {
+			snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid magic force_hicann_init argument %s", parsed_options[_option_lookup("force_hicann_init")].arguments[0]);
+			retval = SLURM_ERROR;
+			goto CLEANUP;
+		}
+		force_hicann_init = true;
+	}
+
+	// make sure that only one of force-hicann-init or skip-hicann-init options is passed
+	if(skip_hicann_init && force_hicann_init) {
+		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Options '--force-hicann-init' and '--skip-hicann-init' are mutually exclusive");
+		retval = SLURM_ERROR;
+		goto CLEANUP;
+	}
+
 	//analyze wmod argument
 	for (argcount = 0; argcount < parsed_options[_option_lookup("wmod")].num_arguments; argcount++) {
 		size_t wafer_id;
@@ -300,9 +344,11 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		allocated_modules[num_allocated_modules].num_active_adcs = 0;
 		for (counter = 0; counter < NUM_FPGAS_ON_WAFER; counter++) {
 			allocated_modules[num_allocated_modules].active_fpgas[counter] = false;
+			allocated_modules[num_allocated_modules].active_fpga_neighbor[counter] = false;
 		}
 		for (counter = 0; counter < NUM_HICANNS_ON_WAFER; counter++) {
 			allocated_modules[num_allocated_modules].active_hicanns[counter] = false;
+			allocated_modules[num_allocated_modules].active_hicann_neighbor[counter] = false;
 		}
 		for (counter = 0; counter < NUM_TRIGGER_PER_WAFER; counter++) {
 			allocated_modules[num_allocated_modules].active_trigger[counter] = false;
@@ -494,6 +540,28 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	adc_environment_string = xmalloc(num_allocated_modules * MAX_ADC_ENV_LENGTH_PER_WAFER + strlen(adc_env_name) + 1);
 	strcpy(adc_environment_string, adc_env_name);
 
+	slurm_neighbor_licenses_raw_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + 1);
+	strcpy(slurm_neighbor_licenses_raw_string, "");
+
+	char slurm_neighbor_licenses_env_name[] = "SLURM_NEIGHBOR_LICENSES=";
+	slurm_neighbor_licenses_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(slurm_neighbor_licenses_env_name) + 1);
+	strcpy(slurm_neighbor_licenses_environment_string, slurm_neighbor_licenses_env_name);
+
+	char slurm_neighbor_hicanns_env_name[] = "SLURM_NEIGHBOR_HICANNS=";
+	slurm_neighbor_hicanns_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(slurm_neighbor_hicanns_env_name) + 1);
+	strcpy(slurm_neighbor_hicanns_environment_string, slurm_neighbor_hicanns_env_name);
+
+	char const slurm_hicann_init_envvar_name[] = "SLURM_HICANN_INIT=";
+	slurm_hicann_init_envvar = xmalloc(strlen(slurm_hicann_init_envvar_name) + (7 + 1));
+	strcpy(slurm_hicann_init_envvar, slurm_hicann_init_envvar_name);
+	if(skip_hicann_init) {
+		strcat(slurm_hicann_init_envvar, "SKIP");
+	} else if(force_hicann_init) {
+		strcat(slurm_hicann_init_envvar, "FORCE");
+	} else {
+		strcat(slurm_hicann_init_envvar, "DEFAULT");
+	}
+
 
 	for (modulecounter = 0; modulecounter < num_allocated_modules; modulecounter++) {
 		char tempstring[MAX_ADC_COORD_LENGTH];
@@ -503,6 +571,31 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		size_t hicanncounter = 0;
 		size_t triggercounter = 0;
 
+		for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
+			if (allocated_modules[modulecounter].active_hicanns[hicanncounter]) {
+				snprintf(tempstring, MAX_ADC_COORD_LENGTH, "%zu,", allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter );
+				strcat(hicann_environment_string, tempstring);
+				// calculate neighbors
+				if(!skip_hicann_init) {
+					_add_neighbors(hicanncounter, &allocated_modules[modulecounter]);
+				}
+			}
+		}
+		// add neighbors to environment after we iterated over all active hicanns
+		if(!skip_hicann_init) {
+			for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
+				if (allocated_modules[modulecounter].active_hicann_neighbor[hicanncounter]) {
+					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuH%zu,", allocated_modules[modulecounter].wafer_id, hicanncounter);
+					strcat(slurm_neighbor_hicanns_environment_string, tempstring);
+				}
+			}
+			for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
+				if (allocated_modules[modulecounter].active_fpga_neighbor[fpgacounter]) {
+					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuF%zu,", allocated_modules[modulecounter].wafer_id, fpgacounter );
+					strcat(slurm_neighbor_licenses_raw_string, tempstring);
+				}
+			}
+		}
 		if(!skip_master_alloc) {
 			//check if more than one FPGA was requested, if true also request master FPGA
 			for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
@@ -511,6 +604,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 				}
 				if(num_active_fpgas > 1) {
 					allocated_modules[modulecounter].active_fpgas[hwdb4c_master_FPGA_enum()] = true;
+					// more than one fpga found -> no more searching needed
 					break;
 				}
 			}
@@ -519,12 +613,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			if (allocated_modules[modulecounter].active_fpgas[fpgacounter]) {
 				snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuF%zu,", allocated_modules[modulecounter].wafer_id, fpgacounter );
 				strcat(slurm_licenses_string, tempstring);
-			}
-		}
-		for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
-			if (allocated_modules[modulecounter].active_hicanns[hicanncounter]) {
-				snprintf(tempstring, MAX_ADC_COORD_LENGTH, "%zu,", allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter );
-				strcat(hicann_environment_string, tempstring);
 			}
 		}
 		for (adccounter = 0; adccounter < allocated_modules[modulecounter].num_active_adcs; adccounter++) {
@@ -549,30 +637,57 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		}
 	}
 
-	// delete trailing ','
-	if (strlen(slurm_licenses_string) > 1) {
-		slurm_licenses_string[strlen(slurm_licenses_string) - 1] = '\0';
-	}
+	// first cat licenses to environment string that add neighbors to the requestes allocations, which are later removed in prolog script
 	strcat(slurm_licenses_environment_string, slurm_licenses_string);
+	// delete trailing ','
+	if(strlen(slurm_licenses_environment_string) > 1) {
+		slurm_licenses_environment_string[strlen(slurm_licenses_environment_string) - 1] = '\0';
+	}
 	if(strlen(hicann_environment_string) > 1) {
 		hicann_environment_string[strlen(hicann_environment_string) - 1] = '\0';
+	}
+	if(strlen(slurm_neighbor_licenses_raw_string) > 1) {
+		slurm_neighbor_licenses_raw_string[strlen(slurm_neighbor_licenses_raw_string) - 1] = '\0';
+	}
+	strcat(slurm_neighbor_licenses_environment_string, slurm_neighbor_licenses_raw_string);
+	strcat(slurm_licenses_string, slurm_neighbor_licenses_raw_string);
+	if(strlen(slurm_neighbor_hicanns_environment_string) > 1) {
+		slurm_neighbor_hicanns_environment_string[strlen(slurm_neighbor_hicanns_environment_string) - 1] = '\0';
 	}
 	if(strlen(adc_environment_string) > 1) {
 		adc_environment_string[strlen(adc_environment_string) - 1] = '\0';
 	}
 
-	xrealloc(job_desc->environment, sizeof(char *) * (job_desc->env_size + 3));
+	xrealloc(job_desc->environment, sizeof(char *) * (job_desc->env_size + 6));
 	job_desc->environment[job_desc->env_size] = xstrdup(hicann_environment_string);
 	job_desc->environment[job_desc->env_size + 1] = xstrdup(adc_environment_string);
 	job_desc->environment[job_desc->env_size + 2] = xstrdup(slurm_licenses_environment_string);
-	job_desc->env_size += 3;
-
-	//set slurm licenses
+	job_desc->environment[job_desc->env_size + 3] = xstrdup(slurm_neighbor_licenses_environment_string);
+	job_desc->environment[job_desc->env_size + 4] = xstrdup(slurm_hicann_init_envvar);
+	job_desc->environment[job_desc->env_size + 5] = xstrdup(slurm_neighbor_hicanns_environment_string);
+	job_desc->env_size += 6;
+	//set slurm licenses (including neighbor licenses, those will be removed in prolog script)
 	if(job_desc->licenses) {
 		xrealloc(job_desc->licenses,strlen(slurm_licenses_string) + strlen(job_desc->licenses) + 1);
 		xstrcat(job_desc->licenses, slurm_licenses_string);
 	} else {
 		job_desc->licenses = xstrdup(slurm_licenses_string);
+	}
+	// write neighbors licenses into slurm admin comment
+	if(job_desc->admin_comment) {
+		xrealloc(job_desc->admin_comment,strlen(slurm_neighbor_licenses_environment_string) + strlen(job_desc->admin_comment) + strlen(slurm_hicann_init_envvar) + strlen(slurm_licenses_environment_string) + 3);
+		xstrcat(job_desc->admin_comment, slurm_neighbor_licenses_environment_string);
+		xstrcat(job_desc->admin_comment, ";");
+		xstrcat(job_desc->admin_comment, slurm_hicann_init_envvar);
+		xstrcat(job_desc->admin_comment, ";");
+		xstrcat(job_desc->admin_comment, slurm_licenses_environment_string);
+	} else {
+		job_desc->admin_comment = xstrdup(slurm_neighbor_licenses_environment_string);
+		xrealloc(job_desc->admin_comment, strlen(job_desc->admin_comment) + strlen(slurm_hicann_init_envvar) + strlen(slurm_licenses_environment_string) + 3);
+		xstrcat(job_desc->admin_comment, ";");
+		xstrcat(job_desc->admin_comment, slurm_hicann_init_envvar);
+		xstrcat(job_desc->admin_comment, ";");
+		xstrcat(job_desc->admin_comment, slurm_licenses_environment_string);
 	}
 	info("LICENSES: %s", job_desc->licenses);
 	retval = SLURM_SUCCESS;
@@ -594,6 +709,18 @@ CLEANUP:
 	if (hicann_environment_string) {
 		xfree(hicann_environment_string);
 		hicann_environment_string = NULL;
+	}
+	if (slurm_neighbor_licenses_raw_string) {
+		xfree(slurm_neighbor_licenses_raw_string);
+	}
+	if (slurm_neighbor_licenses_environment_string) {
+		xfree(slurm_neighbor_licenses_environment_string);
+	}
+	if (slurm_neighbor_hicanns_environment_string) {
+		xfree(slurm_neighbor_hicanns_environment_string);
+	}
+	if (slurm_hicann_init_envvar) {
+		xfree(slurm_hicann_init_envvar);
 	}
 	if (adc_environment_string) {
 		xfree(adc_environment_string);
@@ -975,5 +1102,52 @@ static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module)
 		return NMPM_PLUGIN_FAILURE;
 	}
 	allocated_module->active_trigger[trigger_id] = true;
+	return NMPM_PLUGIN_SUCCESS;
+}
+
+static int _add_neighbors(size_t hicann_id, wafer_res_t *allocated_module)
+{
+	size_t fpga_id;
+
+	if (_allocate_neighbor(hicann_id, allocated_module, hwdb4c_HICANNOnWafer_east) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+	if (_allocate_neighbor(hicann_id, allocated_module, hwdb4c_HICANNOnWafer_south) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+	if (_allocate_neighbor(hicann_id, allocated_module, hwdb4c_HICANNOnWafer_west) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+	if (_allocate_neighbor(hicann_id, allocated_module, hwdb4c_HICANNOnWafer_north) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+
+	/* Since this HICANN is used by the experiment itself, it cannot be a neighbor,
+	 * even if a neighbor-check from a previous HICANN already marked it as such */
+	allocated_module->active_hicann_neighbor[hicann_id] = false;
+	if (hwdb4c_HICANNOnWafer_toFPGAOnWafer(hicann_id, &fpga_id) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+	allocated_module->active_fpga_neighbor[fpga_id] = false;
+	return NMPM_PLUGIN_SUCCESS;
+}
+
+static int _allocate_neighbor(size_t hicann_id,
+                        wafer_res_t *allocated_module,
+                        int (*get_neighbor)(size_t, size_t*))
+{
+	size_t hicann_neibour_id;
+	size_t fpga_id;
+	if (get_neighbor(hicann_id, &hicann_neibour_id) == NMPM_PLUGIN_SUCCESS) {
+		if (!allocated_module->active_hicanns[hicann_neibour_id]) {
+			allocated_module->active_hicann_neighbor[hicann_neibour_id] = true;
+		}
+		if (hwdb4c_HICANNOnWafer_toFPGAOnWafer(hicann_neibour_id, &fpga_id) != NMPM_PLUGIN_SUCCESS) {
+			return NMPM_PLUGIN_FAILURE;
+		}
+		if (!allocated_module->active_fpgas[fpga_id]) {
+			allocated_module->active_fpga_neighbor[fpga_id] = true;
+		}
+	}
 	return NMPM_PLUGIN_SUCCESS;
 }
