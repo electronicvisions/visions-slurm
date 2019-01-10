@@ -788,6 +788,13 @@ PARSE_OPTIONS_CLEANUP:
 static int _add_reticle(size_t reticle_id, int aout, wafer_res_t *allocated_module)
 {
 	size_t fpga_id;
+
+	// check if reticle_id in range
+	if (reticle_id >= NUM_FPGAS_ON_WAFER) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Reticle %zu on Wafer-Module %zu out of range", reticle_id, allocated_module->wafer_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
+
 	if (hwdb4c_ReticleOnWafer_toFPGAOnWafer(reticle_id, &fpga_id) != HWDB4C_SUCCESS) {
 		return NMPM_PLUGIN_FAILURE;
 	}
@@ -797,6 +804,13 @@ static int _add_reticle(size_t reticle_id, int aout, wafer_res_t *allocated_modu
 static int _add_fpga_of_hicann(size_t hicann_id, int aout, wafer_res_t *allocated_module)
 {
 	size_t fpga_id;
+
+	// check if hicann_id in range
+	if (hicann_id >= NUM_HICANNS_ON_WAFER) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "HICANN %zu on Wafer-Module %zu out of range", hicann_id, allocated_module->wafer_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
+
 	if (hwdb4c_HICANNOnWafer_toFPGAOnWafer(hicann_id, &fpga_id) != HWDB4C_SUCCESS) {
 		return NMPM_PLUGIN_FAILURE;
 	}
@@ -810,6 +824,12 @@ static int _add_fpga(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 	size_t num_hicanns;
 	bool has_fpga_entry;
 	size_t global_fpga_id = allocated_module->wafer_id * NUM_FPGAS_ON_WAFER + fpga_id;
+
+	// check if fpga_id in range
+	if (fpga_id >= NUM_FPGAS_ON_WAFER) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "FPGA %zu on Wafer-Module %zu out of range", fpga_id, allocated_module->wafer_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
 
 	// check if fpga is in hwdb_handle
 	if (hwdb4c_has_fpga_entry(hwdb_handle, global_fpga_id, &has_fpga_entry) != HWDB4C_SUCCESS || !has_fpga_entry) {
@@ -841,6 +861,12 @@ static int _add_hicann(size_t hicann_id, int aout, wafer_res_t *allocated_module
 	bool has_hicann_entry;
 	bool has_fpga_entry;
 	size_t fpga_id;
+
+	// check if hicann_id in range
+	if (hicann_id >= NUM_HICANNS_ON_WAFER) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "HICANN %zu on Wafer-Module %zu out of range", hicann_id, allocated_module->wafer_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
 
 	// check if HICANN is in hwdb
 	if(hwdb4c_has_hicann_entry(hwdb_handle, allocated_module->wafer_id * NUM_HICANNS_ON_WAFER + hicann_id, &has_hicann_entry) != HWDB4C_SUCCESS || !has_hicann_entry) {
