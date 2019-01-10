@@ -103,14 +103,14 @@ static enum analog_out_mode {ONLY_AOUT0, ONLY_AOUT1, BOTH_AOUT};
 * function declarations *
 \***********************/
 
-/* takes a string and converts if poossible to int and saves in ret
+/* takes a string and converts if possible to long and saves in ret
  * returns NMPM_PLUGIN_SUCCESS on success, NMPM_PLUGIN_FAILURE on failure */
-static int _str2int(char const* str, int* ret);
+static int _str2l(char const* str, long* ret);
 
-/* takes a string and converts if poossible to unsigned int and saves in ret
+/* takes a string and converts if possible to unsigned long and saves in ret
  * returns NMPM_PLUGIN_SUCCESS on success, NMPM_PLUGIN_FAILURE if no
  * conversion possible or negative number */
-static int _str2uint(char const* str, unsigned int* ret);
+static int _str2ul(char const* str, unsigned long* ret);
 
 /* takes an option string and returns corresponding index, if string is no valid option returns
  * NMPM_PLUGIN_FAILURE */
@@ -268,7 +268,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		size_t wafer_id;
 		bool valid_wafer;
 		//get wafer ID
-		if (_str2uint(parsed_options[_option_lookup("wmod")].arguments[argcount], (unsigned int*)&wafer_id) != NMPM_PLUGIN_SUCCESS) {
+		if (_str2ul(parsed_options[_option_lookup("wmod")].arguments[argcount], &wafer_id) != NMPM_PLUGIN_SUCCESS) {
 			snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid wmod argument %s", parsed_options[_option_lookup("wmod")].arguments[argcount]);
 			retval = ESLURM_INVALID_LICENSES;
 			goto CLEANUP;
@@ -313,7 +313,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	else if (!wmod_only_hw_option) {
 		for (argcount = 0; argcount < parsed_options[_option_lookup("reticle_without_aout")].num_arguments; argcount++) {
 			size_t reticle_id;
-			if (_str2uint(parsed_options[_option_lookup("reticle_without_aout")].arguments[argcount], (unsigned int*)&reticle_id) != NMPM_PLUGIN_SUCCESS) {
+			if (_str2ul(parsed_options[_option_lookup("reticle_without_aout")].arguments[argcount], &reticle_id) != NMPM_PLUGIN_SUCCESS) {
 				snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid --reticle_without_aout argument %s", parsed_options[_option_lookup("reticle_without_aout")].arguments[argcount]);
 				retval = ESLURM_INVALID_LICENSES;
 				goto CLEANUP;
@@ -326,7 +326,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		}
 		for (argcount = 0; argcount < parsed_options[_option_lookup("fpga_without_aout")].num_arguments; argcount++) {
 			size_t fpga_id;
-			if (_str2uint(parsed_options[_option_lookup("fpga_without_aout")].arguments[argcount], (unsigned int*)&fpga_id) != NMPM_PLUGIN_SUCCESS) {
+			if (_str2ul(parsed_options[_option_lookup("fpga_without_aout")].arguments[argcount], &fpga_id) != NMPM_PLUGIN_SUCCESS) {
 				snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid --fpga_without_aout argument %s", parsed_options[_option_lookup("fpga_without_aout")].arguments[argcount]);
 				retval = ESLURM_INVALID_LICENSES;
 				goto CLEANUP;
@@ -339,7 +339,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		}
 		for (argcount = 0; argcount < parsed_options[_option_lookup("hicann_without_aout")].num_arguments; argcount++) {
 			size_t hicann_id;
-			if (_str2uint(parsed_options[_option_lookup("hicann_without_aout")].arguments[argcount], (unsigned int*)&hicann_id) != NMPM_PLUGIN_SUCCESS) {
+			if (_str2ul(parsed_options[_option_lookup("hicann_without_aout")].arguments[argcount], &hicann_id) != NMPM_PLUGIN_SUCCESS) {
 				snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid hicann_without_aout argument %s", parsed_options[_option_lookup("hicann_without_aout")].arguments[argcount]);
 				retval = ESLURM_INVALID_LICENSES;
 				goto CLEANUP;
@@ -352,7 +352,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		}
 		for (argcount = 0; argcount < parsed_options[_option_lookup("reticle_of_hicann_without_aout")].num_arguments; argcount++) {
 			size_t hicann_id;
-			if (_str2uint(parsed_options[_option_lookup("reticle_of_hicann_without_aout")].arguments[argcount], (unsigned int*)&hicann_id) != NMPM_PLUGIN_SUCCESS) {
+			if (_str2ul(parsed_options[_option_lookup("reticle_of_hicann_without_aout")].arguments[argcount], &hicann_id) != NMPM_PLUGIN_SUCCESS) {
 				snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid reticle_of_hicann_without_aout argument %s", parsed_options[_option_lookup("reticle_of_hicann_without_aout")].arguments[argcount]);
 				retval = ESLURM_INVALID_LICENSES;
 				goto CLEANUP;
@@ -621,39 +621,45 @@ extern int job_modify(struct job_descriptor *job_desc, struct job_record *job_pt
 	return SLURM_SUCCESS;
 }
 
-static int _str2int (char const* str, int *p2int)
+static int _str2l (char const* str, long *p2int)
 {
-	long int value;
+	long value = 0;
 	char *end;
 
 	if (str == NULL) {
 		return NMPM_PLUGIN_FAILURE;
 	}
 	errno = 0;
-	value = strtol (str, &end, 10);
+	value = strtol(str, &end, 10);
 	if (end == str || *end != '\0' || (errno == ERANGE && (value == LONG_MAX || value == LONG_MIN))) {
 		return NMPM_PLUGIN_FAILURE;
 	}
-	if (value > INT_MAX || value < INT_MIN) {
+	if (value > LONG_MAX || value < LONG_MIN) {
 		return NMPM_PLUGIN_FAILURE;
 	}
-	*p2int = (int) value;
+	*p2int = value;
 	return NMPM_PLUGIN_SUCCESS;
 }
 
-static int _str2uint (char const* str, unsigned int *p2uint)
+static int _str2ul (char const* str, unsigned long *p2uint)
 {
-	int tmp;
-	if (_str2int(str, &tmp) != NMPM_PLUGIN_SUCCESS) {
+	unsigned long value = 0;
+	char *end;
+
+	if (str == NULL) {
 		return NMPM_PLUGIN_FAILURE;
 	}
-	if (tmp < 0) {
+	errno = 0;
+	value = strtoul(str, &end, 10);
+	if (end == str || *end != '\0' || (errno == ERANGE && (value == LONG_MAX || value == LONG_MIN))) {
 		return NMPM_PLUGIN_FAILURE;
 	}
-	*p2uint = (unsigned int)tmp;
+	if (value > ULONG_MAX) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+	*p2uint = value;
 	return NMPM_PLUGIN_SUCCESS;
 }
-
 
 static int _split_aout_arg(char const* arg, size_t *value, int *aout)
 {
@@ -661,17 +667,17 @@ static int _split_aout_arg(char const* arg, size_t *value, int *aout)
 	char *save_ptr;
 	int tmp;
 	if(strstr(arg, ":") == NULL) {
-		if (_str2uint(arg, (unsigned int*)value) != NMPM_PLUGIN_SUCCESS)
+		if (_str2ul(arg, value) != NMPM_PLUGIN_SUCCESS)
 			return NMPM_PLUGIN_FAILURE;
 		*aout = BOTH_AOUT;
 	}
 	else {
 		aout_split = strtok_r(arg, ":", &save_ptr);
-		if (_str2uint(aout_split, (unsigned int*)value) != NMPM_PLUGIN_SUCCESS) {
+		if (_str2ul(aout_split, value) != NMPM_PLUGIN_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
 		}
 		aout_split = strtok_r(NULL, ",", &save_ptr);
-		if (_str2int(aout_split, &tmp) != NMPM_PLUGIN_SUCCESS) {
+		if (_str2l(aout_split, &tmp) != NMPM_PLUGIN_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
 		}
 		if (tmp == 0) {
