@@ -1,6 +1,14 @@
 /*****************************************************************************\
  *  job_submit_nmpm_custom_resource.c - Manages hardware resources of the
  *  neuromorphic physical model platform via additional spank plugin options
+ *
+ *  This plugin has been developed by staff and students
+ *  of Heidelberg University as part of the research carried out by the
+ *  Electronic Vision(s) group at the Kirchhoff-Institute for Physics.
+ *  The research is funded by Heidelberg University, the State of
+ *  Baden-Württemberg, the Seventh Framework Programme under grant agreements
+ *  no 604102 (HBP) as well as the Horizon 2020 Framework Programme under grant 
+ *  agreement 720270 (HBP).
 \*****************************************************************************/
 
 #include <inttypes.h>
