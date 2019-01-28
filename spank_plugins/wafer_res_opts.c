@@ -1,4 +1,15 @@
 /*
+ *  This plugin provides paramters to srun/sbatch which are used in the
+ *  nmpm custom resource job submit plugin.
+ *
+ *  This plugin has been developed by staff and students
+ *  of Heidelberg University as part of the research carried out by the
+ *  Electronic Vision(s) group at the Kirchhoff-Institute for Physics.
+ *  The research is funded by Heidelberg University, the State of
+ *  Baden-Württemberg, the Seventh Framework Programme under grant agreements
+ *  no 604102 (HBP) as well as the Horizon 2020 Framework Programme under grant 
+ *  agreement 720270 (HBP).
+ *
  *   To compile:
  *    gcc -shared -o wafer_res_opts.so wafer_res_opts.c
  *
