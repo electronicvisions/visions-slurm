@@ -248,8 +248,7 @@ export_spack_view() {
   # Set up slurm view $1
   local SVF="/opt/spack_views/$1"
   export PATH="${SVF}/bin${PATH:+:}${PATH}"
-  export PYTHONPATH="${SVF}/lib/python2.7/site-packages${PYTHONPATH:+:}${PYTHONPATH}"
-  export PYTHONUSERBASE="${SVF}${PYTHONUSERBASE:+:}${PYTHONUSERBASE}"
+  export PYTHONHOME="${SVF}${PYTHONHOME:+:}${PYTHONHOME}"
   export MANPATH="${SVF}/man:${SVF}/share/man${MANPATH:+:}${MANPATH}"
   export LIBRARY_PATH="${SVF}/lib:${SVF}/lib64${LIBRARY_PATH:+:}${LIBRARY_PATH}"
   export LD_LIBRARY_PATH="${SVF}/lib:${SVF}/lib64${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}"
