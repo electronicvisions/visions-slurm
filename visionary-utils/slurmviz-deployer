@@ -104,7 +104,7 @@ cmd_all() {
 
   pushd ${SOURCE}
     for cmd in autogen configure build install testlib; do
-      sudo -u ${SLURM_USER} ${SCRIPTNAME} ${cmd}
+      sudo -u ${SLURM_USER} ${SCRIPTNAME} ${cmd} || exit 1
     done
   popd
   ${CMD_SEXEC} $0 deploy_utils
