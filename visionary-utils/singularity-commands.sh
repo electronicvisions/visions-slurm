@@ -20,6 +20,15 @@ add_if_exists() {
     [ -d "$1" ] && echo -n "-B $1" && [ -n "$2" ] && echo -n ":$2"
 }
 
+# determine which singularity app to run the given command in
+determine_singularity_app() {
+    # currently, we run all slurm-related commands on slurmviz in
+    # visionary-wafer and without any app on hosts
+    if [ "$(hostname)" = "slurmviz" ]; then
+        echo "--app visionary-wafer"
+    fi
+}
+
 generate_singularity_cmd_prefix() {
 (
 echo "${SINGULARITY_BIN}"
@@ -37,11 +46,8 @@ if [ $UID -eq 0 ] && [ -f /usr/local/bin/singularity ]; then
 fi
 # BEGIN bind options
 cat <<EOF
---app visionary-wafer
 $(add_if_exists "${PREFIX}" /opt/slurm)
 $(add_if_exists "${PREFIX}")
-$(add_if_exists "/etc/singularity")
-$(add_if_exists "/usr/local/etc/singularity")
 $(add_if_exists "${HWDB_ROOT}")
 $(add_if_exists /run/mysqld)
 $(add_if_exists /run/nscd)
@@ -55,6 +61,8 @@ for stomount in {loh,scratch,wang,ley,fasthome}; do
     add_if_exists "/${stomount}"
     echo ""
 done
+
+determine_singularity_app
 
 # backward-compatibility for hel
 if [ "$(hostname)" = "helvetica" ]; then

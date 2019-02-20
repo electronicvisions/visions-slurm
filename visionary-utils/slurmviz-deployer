@@ -7,7 +7,7 @@
 
 SOURCE=$PWD
 SCRIPTNAME="$(realpath -P "$0")"
-PATH_UTILS="$(dirname ${SCRIPTNAME})"
+PATH_UTILS="$(dirname "${SCRIPTNAME}")"
 SLURM_USER="slurm"
 test -f "${SOURCE}/slurmviz-deployer" || { echo "slurmviz-deployer not found in current directory"; exit 1; }
 test -f "${SOURCE}/AUTHORS" || { echo "We are not in the sluvmiz repository, are we?"; exit 1; }
@@ -72,7 +72,7 @@ cmd_install() {
 
     make install
     pushd spank_plugins
-      gcc -shared -fPIC -I${SOURCE} -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
+      gcc -shared -fPIC "-I${SOURCE}" -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
     popd
   popd
 }
@@ -87,8 +87,8 @@ cmd_deploy_utils() {
 cmd_testlib() {
   # test for some files to check if stuff was compiled correctly:
   set errexit
-  test -f ${DEPLOY_ROOT}/lib/slurm/jobcomp_elasticsearch.so
-  test -f ${DEPLOY_ROOT}/lib/slurm/job_submit_nmpm_custom_resource.so
+  test -f "${DEPLOY_ROOT}/lib/slurm/jobcomp_elasticsearch.so"
+  test -f "${DEPLOY_ROOT}/lib/slurm/job_submit_nmpm_custom_resource.so"
   echo "basic tests passed"
 }
 
