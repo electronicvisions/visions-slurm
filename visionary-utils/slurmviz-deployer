@@ -95,6 +95,13 @@ cmd_testlib() {
 cmd_all() {
   systemd_slurm test || { echo -e "Stop slurm prior running this:\n\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }
 
+  # delete the generated module file to not link against older modules
+  local module_file
+  module_file="/run/${INSTALL_TYPE}/$(basename "${MODULE_FILE_STORE}")"
+  if [ -f "${module_file}" ]; then
+    rm -v "${module_file}"
+  fi
+
   setup_singularity
 
   test $UID -eq 0 || { echo "You must be root"; exit 1; }
