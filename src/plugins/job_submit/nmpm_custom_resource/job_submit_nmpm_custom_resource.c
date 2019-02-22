@@ -632,7 +632,7 @@ extern int job_modify(struct job_descriptor *job_desc, struct job_record *job_pt
 static int _str2l (char const* str, long *p2int)
 {
 	long value = 0;
-	char *end;
+	char *end = NULL;
 
 	if (str == NULL) {
 		return NMPM_PLUGIN_FAILURE;
@@ -652,7 +652,7 @@ static int _str2l (char const* str, long *p2int)
 static int _str2ul (char const* str, unsigned long *p2uint)
 {
 	unsigned long value = 0;
-	char *end;
+	char *end = NULL;
 
 	if (str == NULL) {
 		return NMPM_PLUGIN_FAILURE;
@@ -671,8 +671,8 @@ static int _str2ul (char const* str, unsigned long *p2uint)
 
 static int _split_aout_arg(char const* arg, size_t *value, int *aout)
 {
-	char *aout_split;
-	char *save_ptr;
+	char *aout_split = NULL;
+	char *save_ptr = NULL;
 	int tmp;
 	if(strstr(arg, ":") == NULL) {
 		if (_str2ul(arg, value) != NMPM_PLUGIN_SUCCESS)
@@ -828,7 +828,7 @@ static int _add_fpga_of_hicann(size_t hicann_id, int aout, wafer_res_t *allocate
 static int _add_fpga(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 {
 	size_t hicanncounter;
-	struct hwdb4c_hicann_entry** hicann_entries;
+	struct hwdb4c_hicann_entry** hicann_entries = NULL;
 	size_t num_hicanns;
 	bool has_fpga_entry;
 	size_t global_fpga_id = allocated_module->wafer_id * NUM_FPGAS_ON_WAFER + fpga_id;
@@ -907,7 +907,7 @@ static int _add_adc(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 	size_t aoutcounter;
 	size_t aoutbegin;
 	size_t aoutend;
-	struct hwdb4c_adc_entry* adc_entry;
+	struct hwdb4c_adc_entry* adc_entry = NULL;
 	size_t global_fpga_id = allocated_module->wafer_id * NUM_FPGAS_ON_WAFER + fpga_id;
 	bool has_adc_entry;
 	int retval = NMPM_PLUGIN_SUCCESS;
