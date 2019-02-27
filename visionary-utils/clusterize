@@ -26,7 +26,9 @@ EOF
   exit 0
 fi
 
-if [ -z "${SINGULARITY_NAME}" ]; then
+# see if clusterize was already set up, otherwise we need another singularity
+# call
+if [ -z "${CLUSTERIZE_SET_UP:-}" ]; then
   # escape user supplied SINGULARITYENV-variables so that they are available
   # for nested singularity calls from the slurmd-container
   escape_singularity_env
@@ -40,9 +42,10 @@ if [ -z "${SINGULARITY_NAME}" ]; then
   if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
     echo "# Running: " ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}"
   fi
+  export SINGULARITYENV_CLUSTERIZE_SET_UP="yessir"
   ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}"
 else
-  # we are in singularity container -> prepare env
+  # we are in singularity container with correct set up -> prepare env
   export_slurm_env
   export_hwdb_env
 
