@@ -10,10 +10,10 @@
 # /opt/slurm{,-testing}/deployed
 # and by default we want to install from visions-slurm to the corresponding
 # deployed folder
-INSTALL_TYPE="$(realpath -P "${BASH_SOURCE[0]}" | awk -F '/' '{ print $3 }')"
+CLUSTERIZE_INSTALL_TYPE="$(realpath -P "${BASH_SOURCE[0]}" | awk -F '/' '{ print $3 }')"
 
-if [ -z "${INSTALL_TYPE}" ]; then
-    echo -n "Could not deduce \$INSTALL_TYPE from " >&2
+if [ -z "${CLUSTERIZE_INSTALL_TYPE}" ]; then
+    echo -n "Could not deduce \$CLUSTERIZE_INSTALL_TYPE from " >&2
     echo "$(realpath -P "${BASH_SOURCE[0]}"), this should not happen!" >&2
 fi
 
@@ -23,16 +23,16 @@ fi
 
 SINGULARITY_COMMANDS="$(dirname "$(realpath -P "${BASH_SOURCE[0]}")")/singularity-commands.sh"
 
-if [ -z "${PREFIX}" ]; then
-  PREFIX="/opt/${INSTALL_TYPE}"
+if [ -z "${CLUSTERIZE_PREFIX}" ]; then
+  CLUSTERIZE_PREFIX="/opt/${CLUSTERIZE_INSTALL_TYPE}"
 fi
 
 if [ -z "${HWDB_ROOT}" ]; then
-  HWDB_ROOT="${PREFIX//slurm/hwdb}"
+  HWDB_ROOT="${CLUSTERIZE_PREFIX//slurm/hwdb}"
 fi
 
 if [ -z "${DEPLOY_ROOT}" ]; then
-  DEPLOY_ROOT="${PREFIX}/deployed"
+  DEPLOY_ROOT="${CLUSTERIZE_PREFIX}/deployed"
 fi
 
 # if file does not exist, it will be generated
@@ -103,14 +103,14 @@ systemd_slurm() {
   # slurmctld (i.e., the services supposed to be run on slurmviz).
   case "$1" in
     "test")
-      pgrep "slurmd@${INSTALL_TYPE}" && return 1
-      pgrep "slurmctld@${INSTALL_TYPE}" && return 1
-      pgrep "slurmdbd@${INSTALL_TYPE}" && return 1
+      pgrep "slurmd@${CLUSTERIZE_INSTALL_TYPE}" && return 1
+      pgrep "slurmctld@${CLUSTERIZE_INSTALL_TYPE}" && return 1
+      pgrep "slurmdbd@${CLUSTERIZE_INSTALL_TYPE}" && return 1
       return 0
       ;;
     *)
-      systemctl $1 slurmctld@${INSTALL_TYPE} || return 1
-      systemctl $1 slurmdbd@${INSTALL_TYPE}  || return 1
+      systemctl $1 slurmctld@${CLUSTERIZE_INSTALL_TYPE} || return 1
+      systemctl $1 slurmdbd@${CLUSTERIZE_INSTALL_TYPE}  || return 1
       ;;
   esac
 }
@@ -132,7 +132,7 @@ setup_compile_dependencies() {
 
   if [ ! -f "${MODULE_FILE_STORE}" ]; then
     if [ ! -d "$(dirname "${MODULE_FILE_STORE}")" ]; then
-      echo "/run/${INSTALL_TYPE} does not exist yet!" \
+      echo "/run/${CLUSTERIZE_INSTALL_TYPE} does not exist yet!" \
            "Typically one of the" \
            "slurm{,ctl,db}d@skretch{,-testing}.services" \
            "has to be started for them to exist.." >&2
@@ -171,7 +171,7 @@ setup_singularity() {
     echo -n "WARN: \$SINGULARITYENV_INSTALL_TYPE is already defined as: " >&2
     echo    "'${SINGULARITYENV_INSTALL_TYPE}', overwriting!" >&2j
   fi
-  export SINGULARITYENV_INSTALL_TYPE="${INSTALL_TYPE}"
+  export SINGULARITYENV_INSTALL_TYPE="${CLUSTERIZE_INSTALL_TYPE}"
   source "${SINGULARITY_COMMANDS}" || { echo "Failed sourcing ${SINGULARITY_COMMANDS}" >&2; exit 1; }
 }
 
