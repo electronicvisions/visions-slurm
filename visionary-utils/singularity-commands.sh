@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [ -z "${INSTALL_TYPE}" ]; then
-    echo "\$INSTALL_TYPE is not defined, this should not happen!" >&2
+if [ -z "${CLUSTERIZE_INSTALL_TYPE}" ]; then
+    echo "\$CLUSTERIZE_INSTALL_TYPE is not defined, this should not happen!" >&2
     return
 fi
 
@@ -11,7 +11,7 @@ if [ -f /usr/local/bin/singularity ]; then
 else
     SINGULARITY_BIN="/usr/bin/singularity"
 fi
-CLUSTER_CONTAINER="${PREFIX}/container"
+CLUSTER_CONTAINER="${CLUSTERIZE_PREFIX}/container"
 
 add_if_exists() {
     # Usage: add_if_exists <source> <target>
@@ -46,14 +46,14 @@ if [ $UID -eq 0 ] && [ -f /usr/local/bin/singularity ]; then
 fi
 # BEGIN bind options
 cat <<EOF
-$(add_if_exists "${PREFIX}" /opt/slurm)
-$(add_if_exists "${PREFIX}")
+$(add_if_exists "${CLUSTERIZE_PREFIX}" /opt/slurm)
+$(add_if_exists "${CLUSTERIZE_PREFIX}")
 $(add_if_exists "${HWDB_ROOT}")
 $(add_if_exists /run/mysqld)
 $(add_if_exists /run/nscd)
-$(add_if_exists "/var/lib/${INSTALL_TYPE}" /var/lib/slurm)
-$(add_if_exists "/var/log/${INSTALL_TYPE}" /var/log/slurm)
-$(add_if_exists "/run/${INSTALL_TYPE}" /run/slurm)
+$(add_if_exists "/var/lib/${CLUSTERIZE_INSTALL_TYPE}" /var/lib/slurm)
+$(add_if_exists "/var/log/${CLUSTERIZE_INSTALL_TYPE}" /var/log/slurm)
+$(add_if_exists "/run/${CLUSTERIZE_INSTALL_TYPE}" /run/slurm)
 -B /sys/fs/cgroup:/opt/cgroup
 -B /etc/group
 EOF
@@ -66,12 +66,12 @@ determine_singularity_app
 
 # backward-compatibility for hel
 if [ "$(hostname)" = "helvetica" ]; then
-    if [[ "$INSTALL_TYPE" == *-testing ]]; then
+    if [[ "$CLUSTERIZE_INSTALL_TYPE" == *-testing ]]; then
         echo "-B /opt/munge-testing/var/run/munge:/run/munge"
     else
         echo "-B /opt/munge-skretch/var/run/munge:/run/munge"
     fi
-elif [[ "$INSTALL_TYPE" == *-testing ]]; then
+elif [[ "$CLUSTERIZE_INSTALL_TYPE" == *-testing ]]; then
     # we are in the testing build, use the testing munge
     add_if_exists /run/munge-testing /run/munge
     echo ""
