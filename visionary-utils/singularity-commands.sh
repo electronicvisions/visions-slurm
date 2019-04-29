@@ -11,7 +11,9 @@ if [ -f /usr/local/bin/singularity ]; then
 else
     SINGULARITY_BIN="/usr/bin/singularity"
 fi
-CLUSTER_CONTAINER="${CLUSTERIZE_PREFIX}/container"
+if [ -z "${CLUSTERIZE_CONTAINER:-}" ]; then
+    CLUSTERIZE_CONTAINER="${CLUSTERIZE_PREFIX}/container"
+fi
 
 add_if_exists() {
     # Usage: add_if_exists <source> <target>
@@ -93,7 +95,7 @@ if [ "${PWD}" != "/" ]; then
 fi
 # END bind options
 
-echo "${CLUSTER_CONTAINER}"
+echo "${CLUSTERIZE_CONTAINER}"
 ) | tr \\n ' '
 }
 
