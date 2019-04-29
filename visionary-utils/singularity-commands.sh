@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [ -z "${CLUSTERIZE_INSTALL_TYPE}" ]; then
+if [ -z "${CLUSTERIZE_INSTALL_TYPE:-}" ]; then
     echo "\$CLUSTERIZE_INSTALL_TYPE is not defined, this should not happen!" >&2
     return
 fi

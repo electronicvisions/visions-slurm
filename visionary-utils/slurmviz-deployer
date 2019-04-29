@@ -97,7 +97,7 @@ cmd_all() {
 
   # delete the generated module file to not link against older modules
   local module_file
-  module_file="/run/${INSTALL_TYPE}/$(basename "${MODULE_FILE_STORE}")"
+  module_file="/run/${CLUSTERIZE_INSTALL_TYPE}/$(basename "${MODULE_FILE_STORE}")"
   if [ -f "${module_file}" ]; then
     rm -v "${module_file}"
   fi
@@ -118,7 +118,7 @@ cmd_all() {
 
   echo "" >&2
   echo "Installed slurm, do not forget to start the corresponding services:" >&2
-  echo -e "\\tsystemctl start slurm{ctl,db}d@${INSTALL_TYPE}" >&2
+  echo -e "\\tsystemctl start slurm{ctl,db}d@${CLUSTERIZE_INSTALL_TYPE}" >&2
   echo "" >&2
 }
 
