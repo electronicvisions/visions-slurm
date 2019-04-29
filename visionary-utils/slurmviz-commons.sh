@@ -10,7 +10,9 @@
 # /opt/slurm{,-testing}/deployed
 # and by default we want to install from visions-slurm to the corresponding
 # deployed folder
-CLUSTERIZE_INSTALL_TYPE="$(realpath -P "${BASH_SOURCE[0]}" | awk -F '/' '{ print $3 }')"
+if [ -z "${CLUSTERIZE_INSTALL_TYPE:-}" ]; then
+    CLUSTERIZE_INSTALL_TYPE="$(realpath -P "${BASH_SOURCE[0]}" | awk -F '/' '{ print $3 }')"
+fi
 
 if [ -z "${CLUSTERIZE_INSTALL_TYPE}" ]; then
     echo -n "Could not deduce \$CLUSTERIZE_INSTALL_TYPE from " >&2
