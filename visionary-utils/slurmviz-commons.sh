@@ -165,7 +165,7 @@ setup_compile_dependencies() {
       echo "# Current modules used by slurm in container."
       echo "# Delete this file and restart slurm to force regeneration!"
       for dep in "${spack_dependencies[@]}"; do
-        spack module loads -r "$(get_latest_version ${dep})"
+        spack module tcl loads -r "$(get_latest_version ${dep})"
       done
     } \
     | awk '($0 in lines == 0) { lines[$0]; print }' \
