@@ -98,8 +98,8 @@ cmd_install_spank() {
 
     set -x
     pushd spank_plugins
-      gcc -shared -fPIC "-I${SOURCE}" -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
-      gcc -shared -fPIC "-I${SOURCE}" -o ${INSTALL_HAGEN_DAAS} hagen_daas.c
+      gcc -g -shared -fPIC "-I${SOURCE}" -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
+      gcc -g -shared -fPIC "-I${SOURCE}" -o ${INSTALL_HAGEN_DAAS} -ltoml hagen_daas.c ../src/plugins/job_submit/hagen_daas/hagen_daas_config.c
     popd
     set +x
   popd

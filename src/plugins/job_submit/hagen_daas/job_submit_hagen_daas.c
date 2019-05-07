@@ -26,7 +26,7 @@
 #include "src/common/xstring.h"
 #include "src/slurmctld/slurmctld.h"
 
-#include "src/common/hagen_daas.h"
+#include "hagen_daas_config.h"
 
 // SLURM plugin definitions
 const char plugin_name[] =
@@ -107,17 +107,6 @@ static int _parse_options(
 	option_entry_t* parsed_options,
 	bool* zero_res_args);
 
-/* Maps board_id to a pointer to the service to run.
- *
- * Returns null pointer if mapping not possible.
- *
- * Currently we map all board ids to dls-v2 (ignoring the provided board id).
- *
- * TODO: Integrate into hwdb-like service that maps board-id to service type
- */
-static service_t const* _board_id_to_service(char const* board_id);
-
-
 /* xmalloc and fill a running_scoop_t with needed information.
  *
  * Caller is responsible for free-ing.
@@ -130,17 +119,6 @@ static running_scoop_t* _build_scoop(
 	const* node, service_t const* service);
 
 
-/* Maps board_id to a pointer to the service name to run.
- *
- * Returns null pointer if mapping not possible.
- *
- * Currently we map all board ids to dls-v2 (ignoring th provided board id).
- *
- * TODO: Integrate into hwdb-like service that maps board-id to service type
- */
-static char const* _board_id_to_service_name(char const* board_id);
-
-
 /* Get service by name
  *
  * Returns nullpointer if service not found.
@@ -148,7 +126,7 @@ static char const* _board_id_to_service_name(char const* board_id);
 static const service_t* _get_service(char const* service_name);
 
 
-/* Adjust the job_desc_msg (e.g. Set the environment variables to point to the
+/* Adjust the job_desc_msg (e.g. set the environment variables to point to the
  * running service so that the job can connect to it) to prepare it for
  * execution.
  *
@@ -287,7 +265,11 @@ static bool _job_record_valid(struct job_record const*);
 int init(void)
 {
 	running_scoops_l = list_create(_destroy_running_scoop);
-	info("Loaded %s", plugin_type);
+	if (hagen_daas_config == NULL)
+	{
+		hd_config_t_load(&hagen_daas_config);
+	}
+	info("[hagen-daas] Loaded %s", plugin_type);
 	return SLURM_SUCCESS;
 }
 
@@ -297,6 +279,10 @@ void fini(void)
 	list_destroy(running_scoops_l);
 	slurm_mutex_unlock(&mutex_running_scoops_l);
 	slurm_mutex_destroy(&mutex_running_scoops_l);
+	if (hagen_daas_config != NULL)
+	{
+		hd_config_t_free(&hagen_daas_config);
+	}
 }
 
 // main plugin function
@@ -313,7 +299,9 @@ extern int job_submit(
 	// holds all parsed options
 	option_entry_t parsed_options[NUM_UNIQUE_OPTIONS];
 
-	char my_errmsg[MAX_LENGTH_ERROR]; // string for temporary error message
+	size_t max_length_my_error = MAX_LENGTH_ERROR + 256;
+	char my_errmsg[max_length_my_error]; // string for temporary error message
+	memset(my_errmsg, 0, max_length_my_error);
 	bool zero_res_args = true;
 	int retval = SLURM_ERROR;
 
@@ -328,7 +316,7 @@ extern int job_submit(
 	if (_parse_options(job_desc, parsed_options, &zero_res_args)
 		!= HAGEN_DAAS_PLUGIN_SUCCESS)
 	{
-		snprintf(my_errmsg, MAX_LENGTH_ERROR, "_parse_options: %s",
+		snprintf(my_errmsg, max_length_my_error, "_parse_options: %s",
 			function_error_msg);
 		retval = SLURM_ERROR;
 		goto CLEANUP;
@@ -338,7 +326,7 @@ extern int job_submit(
 	if (zero_res_args) // TODO
 			/* && !_parsed_options_from_magic_env(job_desc, parsed_options)) */
 	{
-		info("no hagen_daas resources requested.");
+		info("[hagen-daas] no hagen_daas resources requested.");
 		retval = SLURM_SUCCESS;
 		goto CLEANUP;
 	}
@@ -346,7 +334,7 @@ extern int job_submit(
 	if ((parsed_options[_option_lookup("daas_board_id")].num_arguments > 0) &&
 			(parsed_options[_option_lookup("launch_scoop")].num_arguments > 0))
 	{
-		snprintf(my_errmsg, MAX_LENGTH_ERROR, "job_submit: %s",
+		snprintf(my_errmsg, max_length_my_error, "job_submit: %s",
 			"Please specify either --daas-board-id or --start-scoop.");
 		retval = SLURM_ERROR;
 		goto CLEANUP;
@@ -355,10 +343,10 @@ extern int job_submit(
 
 	if (parsed_options[_option_lookup("daas_board_id")].num_arguments > 0)
 	{
-		info("DAAS TASK IS: Preparing user job");
+		info("[hagen-daas] DAAS TASK IS: Preparing user job");
 		if (_prepare_job(job_desc, parsed_options) != HAGEN_DAAS_PLUGIN_SUCCESS)
 		{
-			snprintf(my_errmsg, MAX_LENGTH_ERROR, "_prepare_job: %s",
+			snprintf(my_errmsg, max_length_my_error, "_prepare_job: %s",
 				function_error_msg);
 			retval = SLURM_ERROR;
 			goto CLEANUP;
@@ -367,7 +355,7 @@ extern int job_submit(
 
 	if (parsed_options[_option_lookup("launch_scoop")].num_arguments > 0)
 	{
-		info("DAAS TASK IS: Launching scoop!");
+		info("[hagen-daas] DAAS TASK IS: Launching scoop!");
 		int rc = _ensure_scoop_launched(job_desc, parsed_options);
 		if (rc == HAGEN_DAAS_PLUGIN_NO_JOB_NEEDED)
 		{
@@ -380,7 +368,7 @@ extern int job_submit(
 		}
 		else if (rc == HAGEN_DAAS_PLUGIN_FAILURE)
 		{
-			snprintf(my_errmsg, MAX_LENGTH_ERROR, "_ensure_scoop_launched: %s",
+			snprintf(my_errmsg, max_length_my_error, "_ensure_scoop_launched: %s",
 				function_error_msg);
 			retval = SLURM_ERROR;
 			goto CLEANUP;
@@ -393,7 +381,7 @@ CLEANUP:
 
 	if (retval != SLURM_SUCCESS) {
 		*err_msg = xstrdup(my_errmsg);
-		error("%s", my_errmsg);
+		error("[hagen-daas] %s", my_errmsg);
 	}
 	return retval;
 }
@@ -456,8 +444,8 @@ static int _parse_options(
 	for (optioncount=0; optioncount<job_desc->spank_job_env_size; optioncount++)
 	{
 		char* spank_option_str = job_desc->spank_job_env[optioncount];
-		info("Trying option: %s", spank_option_str);
-		option = strstr(spank_option_str, hd_spank_prefix);
+		info("[hagen-daas] Trying option: %s", spank_option_str);
+		option = strstr(spank_option_str, HAGEN_DAAS_SPANK_PREFIX);
 		if (option == NULL)
 		{
 			// some other spank option, skip
@@ -465,7 +453,7 @@ static int _parse_options(
 		}
 		strncpy(argumentsrc, option, MAX_LENGTH_ARGUMENT_CHAIN);
 		option = argumentsrc; // use copy
-		option += strlen(hd_spank_prefix); // truncate SPANK_OPT_PREFIX
+		option += strlen(HAGEN_DAAS_SPANK_PREFIX); // truncate SPANK_OPT_PREFIX
 		arguments = strstr(argumentsrc, "="); // get string after = symbol
 		if (arguments == NULL)
 		{
@@ -516,28 +504,30 @@ static int _modify_job_desc_compute_job(
 
 	// set magic environment variable so that the spank plugin can identify jobs
 	// (and especially can tell scoop jobs from compute jobs)
-	if (env_array_append(&job_desc->environment, hd_env_name_magic,
-				hd_env_content_magic) != 1)
+	if (env_array_append(&job_desc->environment,
+						 hagen_daas_config->env_name_magic,
+						 hagen_daas_config->env_content_magic) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 	++job_desc->env_size;
 
-	if (env_array_append(&job_desc->environment, hd_env_name_scoop_ip,
-		scoop->ip) != 1)
+	if (env_array_append(&job_desc->environment,
+						 hagen_daas_config->env_name_scoop_ip,
+						 scoop->ip) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 	++job_desc->env_size;
 
-	if (env_array_append_fmt(&job_desc->environment, hd_env_name_scoop_port,
+	if (env_array_append_fmt(&job_desc->environment, hagen_daas_config->env_name_scoop_port,
 		"%d", scoop->service->port) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 	++job_desc->env_size;
 
-	if (env_array_append(&job_desc->environment, hd_env_name_scoop_board_id,
+	if (env_array_append(&job_desc->environment, hagen_daas_config->env_name_scoop_board_id,
 			scoop->board_id) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
@@ -549,7 +539,7 @@ static int _modify_job_desc_compute_job(
 		// if the scoop is already running, tell the spank plugin
 		if (env_array_append_fmt(
 				&job_desc->environment,
-				hd_env_name_scoop_job_id,
+				hagen_daas_config->env_name_scoop_job_id,
 				"%d",
 				scoop->job_record->job_id) != 1)
 		{
@@ -557,13 +547,17 @@ static int _modify_job_desc_compute_job(
 		}
 		++job_desc->env_size;
 	}
+	else
+	{
+		debug2("[hagen-daas] Scoop is not running yet -> requeue");
+	}
 
     // TODO: DELME
-	info("DUMP environment");
+	debug2("[hagen-daas] DUMP environment");
 	size_t i;
 	for (i=0; i<job_desc->env_size; ++i)
 	{
-		info("#%zu: %s", i, job_desc->environment[i]);
+		debug2("[hagen-daas] #%zu: %s", i, job_desc->environment[i]);
 	}
 
 	// we need to be able to requeue the job if scoop allocation fails
@@ -572,36 +566,15 @@ static int _modify_job_desc_compute_job(
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
-static service_t const* _board_id_to_service(char const* board_id)
-{
-	char const* service_name = _board_id_to_service_name(board_id);
-	service_t const* service = _get_service(service_name);
-	xfree(service_name);
-	return service;
-}
-
-
-static char const* _default_service_name = "dls-v2-for-";
-
-static char const* _board_id_to_service_name(char const* board_id)
-{
-	char* service_name = xmalloc(sizeof(char) * MAX_LENGTH_SERVICE_NAME);
-	memset(service_name, 0, MAX_LENGTH_SERVICE_NAME);
-	strncat(service_name, _default_service_name, MAX_LENGTH_SERVICE_NAME-1);
-	strncat(service_name, board_id,
-			MAX_LENGTH_SERVICE_NAME - 1 - strlen(_default_service_name));
-	return service_name;
-}
-
 static service_t const* _get_service(char const* service_name)
 {
 	size_t i;
-	for (i = 0; i < NUM_SERVICES; ++i)
+	for (i = 0; i < hagen_daas_config->num_services; ++i)
 	{
-		if (strncmp(service_name, service_infos[i].service_name,
-				MAX_LENGTH_SERVICE_NAME) == 0)
+		if (0 ==
+			strcmp(service_name, hagen_daas_config->services[i].name))
 		{
-			return &service_infos[i];
+			return hagen_daas_config->services + i;
 		}
 	}
 	return NULL;
@@ -642,7 +615,7 @@ static struct node_record* _gres_to_node(char const* gres)
 			// up until the first colon
 			gres_cpy_inner = xstrdup(gres_node);
 			gres_found = xstrcmp(strtok_r(gres_cpy_inner, ":", &buf_inner),
-					gres) == 0;
+								 gres) == 0;
 			xfree(gres_cpy_inner);
 
 			if (gres_found)
@@ -684,20 +657,29 @@ static int _prepare_job(
 
 	if (!scoop_running)
 	{
+		debug2("[hagen-daas] Scoop not running, setting up..");
 		// if the scoop is not running, we have to look up where it would run so
 		// that the job has these information
-		service_t const* service = _board_id_to_service(board_id);
+		service_t const* service = board_id_to_service(board_id);
+		if (service == NULL )
+		{
+			xfree(scoop);
+			snprintf(
+				function_error_msg, MAX_LENGTH_ERROR,
+				"No service defined for board-id %s!", board_id);
+			return HAGEN_DAAS_PLUGIN_FAILURE;
+		}
 
 		struct node_record* node = _gres_to_node(board_id);
 
 		// TODO DELME start
 		if (node != NULL)
 		{
-			info("Found node %s hosting %s", node->node_hostname, board_id);
+			debug2("[hagen-daas] Found node %s hosting %s", node->node_hostname, board_id);
 		}
 		else
 		{
-			info("Found no node hosting %s", board_id);
+			warn("[hagen-daas] Found no node hosting %s", board_id);
 		}
 		// TODO DELME stop
 
@@ -713,11 +695,15 @@ static int _prepare_job(
 		// build the mock scoop
 		scoop = _build_scoop(board_id, node, service);
 	}
+	else
+	{
+		debug2("[hagen-daas] Scoop is already running, nothing to do..");
+	}
 
 	int retval = _modify_job_desc_compute_job(job_desc, scoop);
 	if (!scoop_running)
 	{
-		// if the scoop is not running we build a temporary placeholder
+		// if the scoop is not running we built a temporary placeholder
 		// -> free it
 		xfree(scoop);
 	}
@@ -767,7 +753,7 @@ static int _ensure_scoop_launched(
 	{
 		// if the scoop is not running, we have to look up where it would run so
 		// that the job has these information
-		service_t const* service = _board_id_to_service(board_id);
+		service_t const* service = board_id_to_service(board_id);
 
 		if (service == NULL)
 		{
@@ -858,7 +844,7 @@ static int _launch_scoop_in_job_desc(
 	}
 
 	// accounting information
-	struct passwd* pwd = getpwnam(hd_scoop_job_user); // no need to free
+	struct passwd* pwd = getpwnam(hagen_daas_config->scoop_job_user); // no need to free
 	if (pwd == NULL)
 	{
 		error("[hagen-daas] Failed to get uid/gid for hagen-daas user.");
@@ -870,9 +856,9 @@ static int _launch_scoop_in_job_desc(
 	job_desc->partition = xstrdup(scoop->service->slurm_partition);
 
 	// resource information
-	job_desc->cpus_per_task = scoop->service->cpus;
-	job_desc->min_cpus = scoop->service->cpus;
-	job_desc->pn_min_cpus = scoop->service->cpus;
+	job_desc->cpus_per_task = scoop->service->num_cpus;
+	job_desc->min_cpus = scoop->service->num_cpus;
+	job_desc->pn_min_cpus = scoop->service->num_cpus;
 	job_desc->pn_min_memory = scoop->service->memory_in_mb;
 	job_desc->shared = 1;
 
@@ -884,22 +870,24 @@ static int _launch_scoop_in_job_desc(
 	// on which port it should listen.
 	// NOTE: Job allocation WILL FAIL if not at least one environment variable
 	// is set here!!
-	if (env_array_append_fmt(&job_desc->environment, hd_env_name_scoop_port,
-		"%d", scoop->service->port) != 1)
+	if (env_array_append_fmt(&job_desc->environment,
+							 hagen_daas_config->env_name_scoop_port,
+							 "%d", scoop->service->port) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 	++job_desc->env_size;
 
-	if (env_array_append(&job_desc->environment, hd_env_name_scoop_board_id,
-			scoop->board_id) != 1)
+	if (env_array_append(&job_desc->environment,
+						 hagen_daas_config->env_name_scoop_board_id,
+						 scoop->board_id) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 	++job_desc->env_size;
 
 	char* old_work_dir = job_desc->work_dir;
-	job_desc->work_dir = xstrdup(hd_scoop_working_dir);
+	job_desc->work_dir = xstrdup(hagen_daas_config->scoop_working_dir);
 	xfree(old_work_dir);
 
 	// TODO: set further requirements if needed
@@ -907,7 +895,10 @@ static int _launch_scoop_in_job_desc(
 	return HAGEN_DAAS_PLUGIN_SUCCESS;
 }
 
-static running_scoop_t* _build_scoop(char const* board_id, struct node_record const* node, service_t const* service)
+static running_scoop_t* _build_scoop(
+		char const* board_id,
+		struct node_record const* node,
+		service_t const* service)
 {
 	running_scoop_t* scoop = xmalloc(sizeof(running_scoop_t));
 
@@ -972,7 +963,8 @@ static bool _check_scoop_running(running_scoop_t* scoop)
 	if (scoop->job_record == NULL)
 	{
 		time_t now = time(NULL);
-		return (now - scoop->t_start <= hd_scoop_launch_wait_secs);
+		return (now - scoop->t_start <=
+				hagen_daas_config->scoop_launch_wait_secs);
 	}
 
 	// see if the magic cookie is still set -> pointer valid
@@ -1051,7 +1043,7 @@ static char* _read_file(char * const fname)
 static char* _get_job_name(running_scoop_t* scoop)
 {
 	char* tmp = NULL;
-	xstrcat(tmp, hd_scoop_jobname_prefix);
+	xstrcat(tmp, hagen_daas_config->scoop_jobname_prefix);
 	xstrcat(tmp, scoop->board_id);
 	return tmp;
 }
@@ -1059,7 +1051,7 @@ static char* _get_job_name(running_scoop_t* scoop)
 static bool _check_job_name_for_board_id(
 		char const* job_name, char const* board_id)
 {
-	size_t prefix_offset = strlen(hd_scoop_jobname_prefix);
+	size_t prefix_offset = strlen(hagen_daas_config->scoop_jobname_prefix);
 	if (strlen(job_name) < (prefix_offset + strlen(board_id)))
 	{
 		return false;
@@ -1073,7 +1065,8 @@ static bool _check_job_name_for_board_id(
 
 static struct job_record* _board_id_to_job_record(char const* board_id)
 {
-	struct passwd* pwd = getpwnam(hd_scoop_job_user); // no need to free
+	// no need to free
+	struct passwd* pwd = getpwnam(hagen_daas_config->scoop_job_user);
 	if (pwd == NULL)
 	{
 		error("[hagen-daas] Failed to get uid/gid for hagen-daas user.");
@@ -1155,15 +1148,17 @@ static bool _parsed_options_from_magic_env(
 		return false;
 	}
 
-	char* magic = getenvp(job_desc->environment, hd_env_name_magic);
-	if (xstrcmp(magic, hd_env_content_magic) != 0)
+	char* magic = getenvp(job_desc->environment,
+						  hagen_daas_config->env_name_magic);
+	if (xstrcmp(magic, hagen_daas_config->env_content_magic) != 0)
 	{
 		return false;
 	}
 	option_entry_t option = parsed_options[_option_lookup("launch_scoop")];
 
 	strcpy(option.arguments[option.num_arguments],
-			getenvp(job_desc->environment, hd_env_name_scoop_board_id));
+			getenvp(job_desc->environment,
+					hagen_daas_config->env_name_scoop_board_id));
 	parsed_options[_option_lookup("launch_scoop")].num_arguments += 1;
 
 	return true;

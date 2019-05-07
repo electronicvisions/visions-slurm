@@ -20,8 +20,9 @@
 #include <slurm/slurm.h>
 
 #include "src/common/env.h"
-#include "src/common/hagen_daas.h"
+#include "src/plugins/job_submit/hagen_daas/hagen_daas_config.h"
 #include "src/common/slurm_protocol_defs.h"
+#include "src/common/xmalloc.h"
 
 /*
  * All spank plugins must define this macro for the
@@ -129,6 +130,11 @@ int slurm_spank_init(spank_t sp, int ac, char** av)
 		default:
 			return 0;
 	}
+	if (hagen_daas_config == NULL)
+	{
+		hd_config_t_init(&hagen_daas_config);
+		hd_config_t_load(&hagen_daas_config);
+	}
 	if (!_check_job_use_hagen_daas(sp))
 	{
 		slurm_debug("[hagen-daas] No magic hagen-daas magic cookie found!");
@@ -154,12 +160,11 @@ static bool _check_job_use_hagen_daas(spank_t sp)
 {
 	char buffer[MAX_LENGTH_ARGUMENT];
 	memset(buffer, 0, MAX_LENGTH_ARGUMENT);
-	spank_err_t rc;
 
 	// we just check the board id because it is always set
-	if (spank_getenv(sp, hd_env_name_magic, buffer, MAX_LENGTH_ARGUMENT) == ESPANK_SUCCESS)
+	if (spank_getenv(sp, hagen_daas_config->env_name_magic, buffer, MAX_LENGTH_ARGUMENT) == ESPANK_SUCCESS)
 	{
-		return strcmp(hd_env_content_magic, buffer) == 0;
+		return strcmp(hagen_daas_config->env_content_magic, buffer) == 0;
 	}
 	else
 	{
@@ -176,7 +181,7 @@ static int _ensure_scoop_running(spank_t sp)
 	char job_id_str[MAX_LENGTH_ARGUMENT];
 	int rc;
 
-	rc = spank_getenv(sp, hd_env_name_scoop_job_id, job_id_str, MAX_LENGTH_ARGUMENT);
+	rc = spank_getenv(sp, hagen_daas_config->env_name_scoop_job_id, job_id_str, MAX_LENGTH_ARGUMENT);
 
 	if (rc == ESPANK_SUCCESS)
 	{
@@ -201,7 +206,7 @@ static int _ensure_scoop_running(spank_t sp)
 	}
 	else if (rc != ESPANK_ENV_NOEXIST)
 	{
-		slurm_error("[hagen-daas] There was an error retreving %s from environment", hd_env_name_scoop_job_id);
+		slurm_error("[hagen-daas] There was an error retreving %s from environment", hagen_daas_config->env_name_scoop_job_id);
 		// something went wrong
 		return -1;
 	}
@@ -231,8 +236,11 @@ static int _queue_scoop_job(spank_t sp)
 
 	int rc;
 
-	if (spank_getenv(sp, hd_env_name_scoop_board_id, board_id, MAX_LENGTH_ARGUMENT) != ESPANK_SUCCESS)
+	slurm_debug("[hagen-daas] Setting up to queue scoop job..");
+
+	if (spank_getenv(sp, hagen_daas_config->env_name_scoop_board_id, board_id, MAX_LENGTH_ARGUMENT) != ESPANK_SUCCESS)
 	{
+		slurm_error("[hagen-daas] Failed to get board id from environment.");
 		return -1;
 	}
 	job_desc_msg_t job_desc;
@@ -251,9 +259,10 @@ static int _queue_scoop_job(spank_t sp)
 	job_desc.user_id = local_uid;
 	job_desc.group_id = local_gid;
 
-	if (_set_env_scoop(&job_desc, board_id) != 0)
+	if ((rc=_set_env_scoop(&job_desc, board_id)) != 0)
 	{
-		return -1;
+		// _set_env_scoop already reports error -> just pass through error value
+		return rc;
 	}
 
 	slurm_debug("[hagen-daas] job_desc->user_id: %d", job_desc.user_id);
@@ -276,7 +285,7 @@ static int _queue_scoop_job(spank_t sp)
 		// Wait for a second and check if it started running, if not, requeue us so that we only run after the scoop has
 		// been started
 		slurm_info("[hagen-daas] Sleeping to wait for scoop launch!");
-		sleep(hd_scoop_launch_wait_secs); // wait for scoop to start
+		sleep(hagen_daas_config->scoop_launch_wait_secs); // wait for scoop to start
 		rc = _check_scoop_job_running(job_id);
 
 		slurm_debug("[hagen-daas] RC for _check_scoop_job_running: %d", rc);
@@ -307,13 +316,13 @@ static int _queue_scoop_job(spank_t sp)
 
 		// in order to avoid race condition, wait for scoop started by another job to start
 		size_t i;
-		for (i=0; i < hd_scoop_launch_wait_num_periods; ++i)
+		for (i=0; i < hagen_daas_config->scoop_launch_wait_num_periods; ++i)
 		{
 			slurm_info("[hagen-daas] Waiting for hardware control daemon job to start.. Elapsed: %zus / Max: %ds",
-					i * hd_scoop_launch_wait_period_secs,
-					hd_scoop_launch_wait_num_periods * hd_scoop_launch_wait_period_secs);
+					i * hagen_daas_config->scoop_launch_wait_period_secs,
+					hagen_daas_config->scoop_launch_wait_num_periods * hagen_daas_config->scoop_launch_wait_period_secs);
 
-			sleep(hd_scoop_launch_wait_period_secs);
+			sleep(hagen_daas_config->scoop_launch_wait_period_secs);
 
 			if (job_id == 0)
 			{
@@ -364,13 +373,16 @@ static int _set_env_scoop(job_desc_msg_t* job_desc, char const* board_id)
 	}
 	++job_desc->env_size;
 
-	const size_t env_name_len = strlen(hd_spank_prefix) + strlen(hd_opt_name_launch_scoop)+1;
+	const size_t env_name_len = strlen(HAGEN_DAAS_SPANK_PREFIX)
+							  + strlen(HAGEN_DAAS_OPT_NAME_LAUNCH_SCOOP)+1;
 	char env_name[env_name_len];
+
 	memset(env_name, 0, env_name_len);
-	strcat(env_name, hd_spank_prefix);
-	strcat(env_name, hd_opt_name_launch_scoop);
+	strcat(env_name, HAGEN_DAAS_SPANK_PREFIX);
+	strcat(env_name, HAGEN_DAAS_OPT_NAME_LAUNCH_SCOOP);
 	if (env_array_append(&job_desc->spank_job_env, env_name, board_id) != 1)
 	{
+		slurm_error("[hagen-daas] Failed to set %s -> %s for scoop job.", env_name, board_id);
 		return -1;
 	}
 	++job_desc->spank_job_env_size;
@@ -427,7 +439,8 @@ static int _check_job_running(uint32_t job_id)
 	}
 	else
 	{
-		slurm_debug("[hagen-daas] Job #%d is neither running nor pending, but in state %d", job_id, job_info->job_state);
+		slurm_error("[hagen-daas] Job #%d is neither running nor pending, but failed with state %d",
+					job_id, job_info->job_state);
 		rc = -1;
 	}
 	slurm_free_job_info_msg(job_info_msg);
@@ -479,12 +492,12 @@ static int _wait_for_job_id(spank_t sp, uint32_t job_id)
 		{
 			// we cannot requeue ourselves, so we just have to wait
 			size_t i;
-			for (i=0; i < hd_srun_requeue_wait_num_periods; ++i)
+			for (i=0; i < hagen_daas_config->srun_requeue_wait_num_periods; ++i)
 			{
 				slurm_info("[hagen-daas] Waiting for hardware control daemon to start.. Elapsed: %zus / Max: %ds",
-						 i * hd_srun_requeue_wait_period_secs,
-						hd_srun_requeue_wait_num_periods * hd_srun_requeue_wait_period_secs);
-				sleep(hd_srun_requeue_wait_period_secs);
+						 i * hagen_daas_config->srun_requeue_wait_period_secs,
+						hagen_daas_config->srun_requeue_wait_num_periods * hagen_daas_config->srun_requeue_wait_period_secs);
+				sleep(hagen_daas_config->srun_requeue_wait_period_secs);
 				if (_check_scoop_job_running(job_id) == 0)
 				{
 					return 0;
@@ -493,7 +506,7 @@ static int _wait_for_job_id(spank_t sp, uint32_t job_id)
 			slurm_error("[hagen-daas] Scoop did not start up. Compute job will fail..");
 			// note: if we return -1 here, the node will be drained which should never happen because of a scheduling
 			// conflict.
-			spank_setenv(sp, hd_env_name_error_msg, "Scoop did not start!", 1);
+			spank_setenv(sp, hagen_daas_config->env_name_error_msg, "Scoop did not start!", 1);
 			return 0;
 		}
 		else if (rc != SLURM_SUCCESS)
@@ -509,7 +522,7 @@ static int _wait_for_job_id(spank_t sp, uint32_t job_id)
 
 static int _board_id_to_scoop_job_id(char const* board_id, uint32_t* job_id)
 {
-	struct passwd* pwd = getpwnam(hd_scoop_job_user); // no need to free
+	struct passwd* pwd = getpwnam(hagen_daas_config->scoop_job_user); // no need to free
 	if (pwd == NULL)
 	{
 		slurm_error("[hagen-daas] Failed to get uid/gid for hagen-daas user.");
@@ -521,10 +534,10 @@ static int _board_id_to_scoop_job_id(char const* board_id, uint32_t* job_id)
 	size_t i;
 	static job_info_msg_t *job_ptr = NULL;
 
-	size_t const jobname_len = strlen(hd_scoop_jobname_prefix) + MAX_LENGTH_ARGUMENT;
+	size_t const jobname_len = strlen(hagen_daas_config->scoop_jobname_prefix) + MAX_LENGTH_ARGUMENT;
 	char jobname[jobname_len];
 	memset(jobname, 0, jobname_len);
-	strcat(jobname, hd_scoop_jobname_prefix);
+	strcat(jobname, hagen_daas_config->scoop_jobname_prefix);
 	strcat(jobname, board_id);
 
 	// Note: The plugin gets reloaded for every job, so we unfortunately cannot store and resuse the job information we
@@ -532,16 +545,17 @@ static int _board_id_to_scoop_job_id(char const* board_id, uint32_t* job_id)
 	rc = slurm_load_job_user(&job_ptr, scoop_job_uid, SHOW_ALL);
 	if (rc != SLURM_SUCCESS)
 	{
-		slurm_error("[hagen-daas] Failed to retrieve jobs for user %s (uid %d), RC: %d", hd_scoop_job_user, scoop_job_uid, rc);
+		slurm_error("[hagen-daas] Failed to retrieve jobs for user %s (uid %d), RC: %d", hagen_daas_config->scoop_job_user, scoop_job_uid, rc);
 		return -1;
 	}
-	job_info_t* job = job_ptr->job_array - 1; 
+	job_info_t* job = job_ptr->job_array;
+	slurm_debug("[hagen-daas] Looking at %d potential scoop jobs.", job_ptr->record_count);
 	for (i = 0; i < job_ptr->record_count; ++i)
 	{
-		++job;
 		slurm_debug("[hagen-daas] Looking at job #%d with name %s in state %d", job->job_id, job->name, job->job_state);
 		if (!(IS_JOB_RUNNING(job) || IS_JOB_PENDING(job)))
 		{
+			++job;
 			continue;
 		}
 
@@ -563,7 +577,7 @@ static int _board_id_to_scoop_job_id(char const* board_id, uint32_t* job_id)
 
 	if (job == NULL)
 	{
-		slurm_error("[hagen-daas] Did not find scoop job for board %s!", board_id);
+		slurm_debug("[hagen-daas] Did not find scoop job for board %s!", board_id);
 		return -1;
 	}
 	else
@@ -578,9 +592,11 @@ static int _find_wait_existing_scoop_job(spank_t sp)
 	uint32_t job_id;
 	char board_id[MAX_LENGTH_ARGUMENT];
 
-	if (spank_getenv(sp, hd_env_name_scoop_board_id, board_id, MAX_LENGTH_ARGUMENT) != ESPANK_SUCCESS)
+	slurm_debug("[hagen-daas] Finding (and potentially waiting) for scoop job..");
+
+	if (spank_getenv(sp, hagen_daas_config->env_name_scoop_board_id, board_id, MAX_LENGTH_ARGUMENT) != ESPANK_SUCCESS)
 	{
-		slurm_error("[hagen-daas] Failed to get %s!", hd_env_name_scoop_board_id);
+		slurm_error("[hagen-daas] Failed to get %s!", hagen_daas_config->env_name_scoop_board_id);
 		return -1;
 	}
 
