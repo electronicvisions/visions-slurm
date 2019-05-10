@@ -480,39 +480,19 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	}
 
 	//generate slurm license string from allocated modules
-	slurm_licenses_string = malloc(sizeof(char) * num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER);
-	if(slurm_licenses_string == NULL) {
-		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Memory alloc for slurm license string failed");
-		retval = SLURM_ERROR;
-		goto CLEANUP;
-	}
+	slurm_licenses_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + 1);
 	strcpy(slurm_licenses_string, "");
 
 	char slurm_licenses_env_name[] = "HARDWARE_LICENSES=";
-	slurm_licenses_environment_string = malloc(sizeof(char) * (num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + strlen(slurm_licenses_env_name)));
-	if(slurm_licenses_environment_string == NULL) {
-		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Memory alloc for slurm license string failed");
-		retval = SLURM_ERROR;
-		goto CLEANUP;
-	}
+	slurm_licenses_environment_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + strlen(slurm_licenses_env_name) + 1);
 	strcpy(slurm_licenses_environment_string, slurm_licenses_env_name);
 
 	char hicann_env_name[] = "ALLOCATED_HICANNGLOBAL=";
-	hicann_environment_string = malloc(sizeof(char) * (num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(hicann_env_name)));
-	if(hicann_environment_string == NULL) {
-		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Memory alloc for HICANN environment string failed");
-		retval = SLURM_ERROR;
-		goto CLEANUP;
-	}
+	hicann_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(hicann_env_name) + 1);
 	strcpy(hicann_environment_string, hicann_env_name);
 
 	char adc_env_name[] = "ALLOCATED_ADC=";
-	adc_environment_string = malloc(sizeof(char) * (num_allocated_modules * MAX_ADC_ENV_LENGTH_PER_WAFER + strlen(adc_env_name)));
-	if(adc_environment_string == NULL) {
-		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Memory alloc for ADC environment string failed");
-		retval = SLURM_ERROR;
-		goto CLEANUP;
-	}
+	adc_environment_string = xmalloc(num_allocated_modules * MAX_ADC_ENV_LENGTH_PER_WAFER + strlen(adc_env_name) + 1);
 	strcpy(adc_environment_string, adc_env_name);
 
 
@@ -586,14 +566,13 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	job_desc->environment[job_desc->env_size] = xstrdup(hicann_environment_string);
 	job_desc->environment[job_desc->env_size + 1] = xstrdup(adc_environment_string);
 	job_desc->environment[job_desc->env_size + 2] = xstrdup(slurm_licenses_environment_string);
-	job_desc->env_size = job_desc->env_size + 3;
+	job_desc->env_size += 3;
 
 	//set slurm licenses
 	if(job_desc->licenses) {
-		xrealloc(job_desc->licenses, sizeof(char *) * (strlen(slurm_licenses_string) + strlen(job_desc->licenses)));
+		xrealloc(job_desc->licenses,strlen(slurm_licenses_string) + strlen(job_desc->licenses) + 1);
 		xstrcat(job_desc->licenses, slurm_licenses_string);
 	} else {
-		xrealloc(job_desc->licenses, sizeof(char *) * (strlen(slurm_licenses_string)));
 		job_desc->licenses = xstrdup(slurm_licenses_string);
 	}
 	info("LICENSES: %s", job_desc->licenses);
@@ -606,16 +585,20 @@ CLEANUP:
 		error("%s", my_errmsg);
 	}
 	if (slurm_licenses_string) {
-		free(slurm_licenses_string);
+		xfree(slurm_licenses_string);
+		slurm_licenses_string = NULL;
 	}
 	if (slurm_licenses_environment_string) {
-		free(slurm_licenses_environment_string);
+		xfree(slurm_licenses_environment_string);
+		slurm_licenses_environment_string = NULL;
 	}
 	if (hicann_environment_string) {
-		free(hicann_environment_string);
+		xfree(hicann_environment_string);
+		hicann_environment_string = NULL;
 	}
 	if (adc_environment_string) {
-		free(adc_environment_string);
+		xfree(adc_environment_string);
+		adc_environment_string = NULL;
 	}
 	if (hwdb_handle) {
 		hwdb4c_free_hwdb(hwdb_handle);
@@ -669,34 +652,47 @@ static int _str2ul (char const* str, unsigned long *p2uint)
 	return NMPM_PLUGIN_SUCCESS;
 }
 
-static int _split_aout_arg(char const* arg, size_t *value, int *aout)
+static int _split_aout_arg(char const* carg, size_t *value, int *aout)
 {
 	char *aout_split = NULL;
 	char *save_ptr = NULL;
+	char *arg = NULL;
 	int tmp;
+	int retval = NMPM_PLUGIN_SUCCESS;
+	arg = xstrdup(carg);
 	if(strstr(arg, ":") == NULL) {
-		if (_str2ul(arg, value) != NMPM_PLUGIN_SUCCESS)
-			return NMPM_PLUGIN_FAILURE;
+		if (_str2ul(arg, value) != NMPM_PLUGIN_SUCCESS) {
+			retval = NMPM_PLUGIN_FAILURE;
+			goto SPLIT_AOUT_ARG_CLEANUP;
+		}
 		*aout = BOTH_AOUT;
 	}
 	else {
 		aout_split = strtok_r(arg, ":", &save_ptr);
 		if (_str2ul(aout_split, value) != NMPM_PLUGIN_SUCCESS) {
-			return NMPM_PLUGIN_FAILURE;
+			retval = NMPM_PLUGIN_FAILURE;
+			goto SPLIT_AOUT_ARG_CLEANUP;
 		}
 		aout_split = strtok_r(NULL, ",", &save_ptr);
 		if (_str2l(aout_split, &tmp) != NMPM_PLUGIN_SUCCESS) {
-			return NMPM_PLUGIN_FAILURE;
+			retval = NMPM_PLUGIN_FAILURE;
+			goto SPLIT_AOUT_ARG_CLEANUP;
 		}
 		if (tmp == 0) {
 			*aout = ONLY_AOUT0;
 		} else if (tmp == 1) {
 			*aout = ONLY_AOUT1;
 		} else {
-			return NMPM_PLUGIN_FAILURE;
+			retval = NMPM_PLUGIN_FAILURE;
+			goto SPLIT_AOUT_ARG_CLEANUP;
 		}
 	}
-	return NMPM_PLUGIN_SUCCESS;
+SPLIT_AOUT_ARG_CLEANUP:
+	if (arg) {
+		xfree(arg);
+		arg = NULL;
+	}
+	return retval;
 }
 
 static int _option_lookup(char const *option_string)
@@ -713,23 +709,19 @@ static int _option_lookup(char const *option_string)
 static int _parse_options(struct job_descriptor const *job_desc, option_entry_t *parsed_options, bool *zero_res_args)
 {
 	size_t optioncount, argcount;
-	char argumentsrc[MAX_ARGUMENT_CHAIN_LENGTH];
+	char argumentsrc[MAX_ARGUMENT_CHAIN_LENGTH] = {0};
 	char *spank_string = NULL;
 	char *arguments = NULL;
 	char *option = NULL;
 	char *argument_token = NULL;
 	char *save_ptr = NULL;
 	int retval = NMPM_PLUGIN_SUCCESS;
+
 	// each option is formated the following way
 	// _SLURM_SPANK_OPTION_wafer_res_opts_[option]=[argument,argument,...]
 	// we iterate over all arguments of all options and save them in parsed_options
 	for (optioncount = 0; optioncount < job_desc->spank_job_env_size; optioncount++) {
-		spank_string = malloc(sizeof(char) * strlen(job_desc->spank_job_env[optioncount]));
-		if (spank_string == 0) {
-			snprintf(function_error_msg, MAX_ERROR_LENGTH, "spank_string memory alloc failed");
-			retval = NMPM_PLUGIN_FAILURE;
-			goto PARSE_OPTIONS_CLEANUP;
-		}
+		spank_string = xmalloc(strlen(job_desc->spank_job_env[optioncount]) + 1);
 		strcpy(spank_string, job_desc->spank_job_env[optioncount]);
 		option = strstr(spank_string, SPANK_OPT_PREFIX);
 
@@ -749,7 +741,7 @@ static int _parse_options(struct job_descriptor const *job_desc, option_entry_t 
 			goto PARSE_OPTIONS_CLEANUP;
 		}
 
-		// truncate '=' at end of option string
+		// truncate '=' at end of option string (replace = with 0)
 		option[strlen(option) - strlen(arguments)] = 0;
 		// truncate '=' at beginning of argument chain
 		arguments += 1;
@@ -783,7 +775,7 @@ static int _parse_options(struct job_descriptor const *job_desc, option_entry_t 
 		}
 PARSE_OPTIONS_CLEANUP:
 		if (spank_string) {
-			free(spank_string);
+			xfree(spank_string);
 			spank_string = NULL;
 		}
 		if(retval == NMPM_PLUGIN_FAILURE) {
