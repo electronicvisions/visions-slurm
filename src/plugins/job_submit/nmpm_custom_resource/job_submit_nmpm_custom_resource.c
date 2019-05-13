@@ -102,9 +102,9 @@ static const option_index_t custom_res_options[NUM_OPTIONS] = {
 // global handle of hwdb
 static struct hwdb4c_database_t* hwdb_handle = NULL;
 // global string to hold error message for slurm
-static char function_error_msg[MAX_ERROR_LENGTH];
+static char function_error_msg[MAX_ERROR_LENGTH] = "";
 
-static enum analog_out_mode {ONLY_AOUT0, ONLY_AOUT1, BOTH_AOUT};
+enum analog_out_mode {ONLY_AOUT0, ONLY_AOUT1, BOTH_AOUT};
 
 
 /***********************\
@@ -194,7 +194,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	for (optioncounter = 0; optioncounter < NUM_OPTIONS; optioncounter++) {
 		parsed_options[optioncounter].num_arguments = 0;
 	}
-	strcpy(function_error_msg, "");
 
 	// get parsed options
 	if (_parse_options(job_desc, parsed_options, &zero_res_args) != NMPM_PLUGIN_SUCCESS) {
@@ -657,7 +656,7 @@ static int _split_aout_arg(char const* carg, size_t *value, int *aout)
 	char *aout_split = NULL;
 	char *save_ptr = NULL;
 	char *arg = NULL;
-	int tmp;
+	long tmp;
 	int retval = NMPM_PLUGIN_SUCCESS;
 	arg = xstrdup(carg);
 	if(strstr(arg, ":") == NULL) {
