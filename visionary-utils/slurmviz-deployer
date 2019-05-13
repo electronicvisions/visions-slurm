@@ -23,7 +23,7 @@ cmd_autogen() {
 
   pushd ${SOURCE}
     setup_compile_dependencies
-    ./autogen.sh
+    ./autogen.sh || exit $?
   popd
 }
 
@@ -33,7 +33,7 @@ cmd_configure() {
   pushd ${SOURCE}
     export_hwdb_env
     setup_compile_dependencies
-    ./configure $(get_config_opts)
+    ./configure $(get_config_opts) || exit $?
   popd
 }
 
@@ -45,7 +45,7 @@ cmd_build() {
   pushd ${SOURCE}
     export_hwdb_env
     setup_compile_dependencies
-    make -j $(nproc)
+    make -j $(nproc) || exit $?
   popd
 }
 
@@ -133,6 +133,6 @@ else
   else
     setup_singularity
 
-    ${CMD_SEXEC} $0 $1
+    ${CMD_SEXEC} $0 $1 || exit $?
   fi
 fi
