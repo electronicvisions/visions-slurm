@@ -85,7 +85,7 @@ cat <<EOF | tr '\n' ' '
 --prefix=${DEPLOY_ROOT}
 --enable-pam
 --with-hdf5=$(spack location -i "$(get_latest_version hdf5)")
---with-hwloc=$(spack location -i "$(get_latest_version hwloc)")
+--with-hwloc=$(spack location -i "$(get_latest_version hwloc@:1.999.999)")
 --with-json=$(spack location -i "$(get_latest_version json-c)")
 --with-libcurl=$(spack location -i "$(get_latest_version curl)")
 --with-lz4=$(spack location -i "$(get_latest_version lz4)")
