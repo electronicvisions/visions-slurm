@@ -49,11 +49,6 @@ else
   export_slurm_env
   export_hwdb_env
 
-  # No call to setup_compile_dependencies necessary because visionary-wafer and
-  # visionary-slurmviz contain all dependencies for hwdb and slurm.
-  export_spack_view visionary-wafer
-  export_spack_view visionary-slurmviz
-
   # restore variables for singularity containers
   restore_singularity_env
 
