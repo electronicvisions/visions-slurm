@@ -183,8 +183,8 @@ setup_compile_dependencies() {
   source ${MODULE_FILE_STORE}
   (( reset_x == 1 )) && module list && set -x
 
-  export CC=/opt/spack_views/visionary-defaults/bin/gcc
-  export CXX=/opt/spack_views/visionary-defaults/bin/g++
+  export CC=/opt/spack_views/visionary-dev-tools/bin/gcc
+  export CXX=/opt/spack_views/visionary-dev-tools/bin/g++
 
   export_ldflags
 }
