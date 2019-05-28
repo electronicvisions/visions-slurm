@@ -41,6 +41,21 @@ ${CMD} ./waf setup --project=hwdb
 ${CMD} ./waf repos-update --repo-db-url=https://github.com/electronicvisions/projects
 export CFLAGS_PREPEND='-D_FORTIFY_SOURCE=1 -fstack-protector-strong'
 export CXXFLAGS_PREPEND='-D_FORTIFY_SOURCE=1 -fstack-protector-strong'
-${CMD} ./waf configure --disable-confcache --build-profile=debug build install --target hwdb4c --test-execall
+
+rpaths=(
+  "${PATH_HWDB}/lib"
+  "/opt/spack_views/visionary-wafer/lib"
+)
+
+# prepend all rpaths with '-rpath' and join by commas
+merged_rpaths="$(
+  for rp in "${rpaths[@]}"; do
+    echo "-rpath,${rp}"
+  done | tr '\n' ','
+)"
+
+# remove last comma from ${merged_paths}
+export LDFLAGS="-Wl,${merged_rpaths::-1},-z,defs${LDFLAGS:+,${LDFLAGS}}"
+${CMD} ./waf configure -v --disable-confcache --build-profile=debug build install --target hwdb4c --test-execall
 
 popd
