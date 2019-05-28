@@ -117,6 +117,27 @@ systemd_slurm() {
   esac
 }
 
+export_ldflags() {
+  local rpaths
+  rpaths=(
+    "${DEPLOY_ROOT}/lib"
+    "${HWDB_ROOT}/lib"
+    "/opt/spack_views/visionary-slurmviz/lib"
+    "/opt/spack_views/visionary-wafer/lib"
+  )
+
+  # prepend all rpaths with '-rpath' and join by commas
+  local merged_rpaths
+  merged_rpaths="$(
+    for rp in "${rpaths[@]}"; do
+      echo "-rpath,${rp}"
+    done | tr '\n' ','
+  )"
+
+  # remove last comma from ${merged_paths}
+  export LDFLAGS="-Wl,${merged_rpaths::-1}${LDFLAGS:+,${LDFLAGS}}"
+}
+
 setup_compile_dependencies() {
   # Extracts all dependencies needed for compiling (i.e., packages described in
   # ${spack_dependencies}[@]) from spack and stores all module calls in a
@@ -164,6 +185,8 @@ setup_compile_dependencies() {
 
   export CC=/opt/spack_views/visionary-defaults/bin/gcc
   export CXX=/opt/spack_views/visionary-defaults/bin/g++
+
+  export_ldflags
 }
 
 setup_singularity() {
