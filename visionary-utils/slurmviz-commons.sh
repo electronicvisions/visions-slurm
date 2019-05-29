@@ -265,8 +265,7 @@ export_hwdb_env() {
 
 export_slurm_env() {
   export PATH=${DEPLOY_ROOT}/bin:${PATH:+:${PATH}}
-  export LIBRARY_PATH=${DEPLOY_ROOT}/lib${LIBRARY_PATH:+:${LIBRARY_PATH}}
-  export LD_LIBRARY_PATH=${DEPLOY_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+  # all exectuables are built via RPATH
 }
 
 export_spack_view() {

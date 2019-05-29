@@ -47,7 +47,6 @@ if [ -z "${CLUSTERIZE_SET_UP:-}" ]; then
 else
   # we are in singularity container with correct set up -> prepare env
   export_slurm_env
-  export_hwdb_env
 
   # restore variables for singularity containers
   restore_singularity_env
