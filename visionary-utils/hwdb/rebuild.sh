@@ -32,10 +32,19 @@ CMD="singularity exec -B $PWD -a visionary-wafer ${PATH_CONTAINER}"
 # ensure empty
 rm -rv ./bin ./build ./lib ./.waf-* ./.symwaf2ic* || true
 
+# ensure waf repo exists
+if [ ! -d waf-repo ]; then
+    ${CMD} git clone git@gitviz.kip.uni-heidelberg.de:waf.git waf-repo \
+           -b symwaf2ic
+fi
+
 pushd waf-repo
 ${CMD} git pull
 ${CMD} make
 popd
+
+[ -f ./waf ] && rm -v ./waf
+cp -v waf-repo/waf .
 
 ${CMD} ./waf setup --project=hwdb
 ${CMD} ./waf repos-update --repo-db-url=https://github.com/electronicvisions/projects
