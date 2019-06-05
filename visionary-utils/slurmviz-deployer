@@ -71,7 +71,6 @@ cmd_install() {
 
   test $UID -eq 0 && { echo "You must NOT be root"; exit 1; }
 
-  INSTALL_WAFER_RES_OPTS=${DEPLOY_ROOT}/lib/slurm/wafer_res_opts.so
   pushd ${SOURCE}
     rm ${INSTALL_WAFER_RES_OPTS} || true
 
@@ -79,9 +78,28 @@ cmd_install() {
     setup_compile_dependencies
 
     make install
+  popd
+}
+
+cmd_install_spank() {
+  systemd_slurm test || {
+    echo -e "Stop slurm prior running this:\\n";
+    echo -e "\\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }
+
+  test $UID -eq 0 && { echo "You must NOT be root"; exit 1; }
+
+  INSTALL_WAFER_RES_OPTS=${DEPLOY_ROOT}/lib/slurm/wafer_res_opts.so
+  pushd ${SOURCE}
+    rm ${INSTALL_WAFER_RES_OPTS} || true
+
+    export_hwdb_env
+    setup_compile_dependencies
+
+    set -x
     pushd spank_plugins
       gcc -shared -fPIC "-I${SOURCE}" -o ${INSTALL_WAFER_RES_OPTS} wafer_res_opts.c
     popd
+    set +x
   popd
 }
 
@@ -118,7 +136,7 @@ cmd_all() {
   test "$SOURCE_OWNER" != "root" || echo "$0 should not be owned by root"
 
   pushd ${SOURCE}
-    for cmd in autogen configure build install testlib; do
+    for cmd in autogen configure build install install_spank testlib; do
       sudo -u ${SLURM_USER} ${SCRIPTNAME} ${cmd} || exit 1
     done
   popd
