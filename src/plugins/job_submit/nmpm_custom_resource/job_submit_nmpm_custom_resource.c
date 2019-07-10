@@ -31,6 +31,7 @@
 #define NUM_HICANNS_ON_WAFER 384
 #define MAX_ADCS_PER_WAFER 12
 #define NUM_TRIGGER_PER_WAFER 12
+#define NUM_ANANAS_PER_WAFER 2
 
 #define MAX_NUM_ARGUMENTS NUM_HICANNS_ON_WAFER
 #define MAX_ARGUMENT_CHAIN_LENGTH 10000 //max number of chars for one argument chain
@@ -41,7 +42,7 @@
 #define MAX_ENV_NAME_LENGTH 50
 #define MAX_HICANN_ENV_LENGTH_PER_WAFER (6 * NUM_HICANNS_ON_WAFER + MAX_ENV_NAME_LENGTH)
 #define MAX_ADC_ENV_LENGTH_PER_WAFER (MAX_ADC_COORD_LENGTH * MAX_ADCS_PER_WAFER + MAX_ENV_NAME_LENGTH)
-#define MAX_LICENSE_STRING_LENGTH_PER_WAFER (MAX_ADC_COORD_LENGTH * MAX_ADCS_PER_WAFER + NUM_HICANNS_ON_WAFER * 6)
+#define MAX_LICENSE_STRING_LENGTH_PER_WAFER (MAX_ADC_COORD_LENGTH * MAX_ADCS_PER_WAFER + NUM_HICANNS_ON_WAFER * 6 + MAX_ADC_COORD_LENGTH * NUM_ANANAS_PER_WAFER)
 #define NMPM_PLUGIN_SUCCESS 0
 #define NMPM_PLUGIN_FAILURE -1
 #define NMPM_MAGIC_BINARY_OPTION "praise the sun"
@@ -61,6 +62,7 @@ typedef struct wafer_res {
 	bool active_fpga_neighbor[NUM_FPGAS_ON_WAFER];
 	char active_adcs[MAX_ADCS_PER_WAFER][MAX_ADC_COORD_LENGTH];
 	bool active_trigger[NUM_TRIGGER_PER_WAFER];
+	bool active_ananas[NUM_ANANAS_PER_WAFER];
 	bool active_hicann_neighbor[NUM_HICANNS_ON_WAFER];
 	size_t num_active_adcs;
 } wafer_res_t;
@@ -164,6 +166,9 @@ static int _add_adc(size_t fpga_id, int aout, wafer_res_t* allocated_module);
 /* adds requested trigger group of corresponding fpga */
 static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module);
 
+/* sets ananas of corresponding fpga active for allocated_module */
+static int _add_ananas(size_t fpga_id, wafer_res_t *allocated_module);
+
 /* Check if neighboring HICANNs exist and set those as active_hicann_neighbors
  * except if they are already active HICANNs. Same is done for corresponding FPGAs */
 static int _add_neighbors(size_t hicann_id, wafer_res_t *allocated_module);
@@ -194,7 +199,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	bool wmod_only_hw_option = true;
 	bool skip_master_alloc = false;
 	bool without_trigger = false;
-	bool at_least_one_adc_allocated = false;
 	bool skip_hicann_init = false;
 	bool force_hicann_init = false;
 	size_t counter;
@@ -352,6 +356,9 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		}
 		for (counter = 0; counter < NUM_TRIGGER_PER_WAFER; counter++) {
 			allocated_modules[num_allocated_modules].active_trigger[counter] = false;
+		}
+		for (counter = 0; counter < NUM_ANANAS_PER_WAFER; counter++) {
+			allocated_modules[num_allocated_modules].active_ananas[counter] = false;
 		}
 		num_allocated_modules++;
 	}
@@ -570,6 +577,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		size_t adccounter = 0;
 		size_t hicanncounter = 0;
 		size_t triggercounter = 0;
+		size_t ananascounter = 0;
 
 		for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
 			if (allocated_modules[modulecounter].active_hicanns[hicanncounter]) {
@@ -619,18 +627,17 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			snprintf(tempstring, MAX_ADC_COORD_LENGTH, "%s,", allocated_modules[modulecounter].active_adcs[adccounter] );
 			strcat(slurm_licenses_string, tempstring);
 			strcat(adc_environment_string, tempstring);
-			at_least_one_adc_allocated= true;
 		}
-		if(without_trigger) {
-			if(!at_least_one_adc_allocated) {
-				snprintf(my_errmsg, MAX_ERROR_LENGTH, "--without trigger specified but no analog readout specified");
-				retval = ESLURM_INVALID_LICENSES;
-				goto CLEANUP;
-			}
-		} else {
+		if(!without_trigger) {
 			for (triggercounter = 0; triggercounter < NUM_TRIGGER_PER_WAFER; triggercounter++) {
 				if (allocated_modules[modulecounter].active_trigger[triggercounter]) {
 					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuT%zu,", allocated_modules[modulecounter].wafer_id, triggercounter );
+					strcat(slurm_licenses_string, tempstring);
+				}
+			}
+			for (ananascounter = 0; ananascounter < NUM_ANANAS_PER_WAFER; ananascounter++) {
+				if (allocated_modules[modulecounter].active_ananas[ananascounter]) {
+					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuA%zu,", allocated_modules[modulecounter].wafer_id, ananascounter );
 					strcat(slurm_licenses_string, tempstring);
 				}
 			}
@@ -976,9 +983,14 @@ static int _add_fpga(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 	hwdb4c_free_hicann_entries(hicann_entries, num_hicanns);
 
 	allocated_module->active_fpgas[fpga_id] = true;
-	if (aout > -1)
-		if (_add_adc(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS)
+	if (aout > -1) {
+		if (_add_adc(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
+		}
+	}
+	if (_add_ananas(fpga_id, allocated_module) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
 	return NMPM_PLUGIN_SUCCESS;
 }
 
@@ -1011,8 +1023,12 @@ static int _add_hicann(size_t hicann_id, int aout, wafer_res_t *allocated_module
 	allocated_module->active_hicanns[hicann_id] = true;
 	allocated_module->active_fpgas[fpga_id] = true;
 	if (aout > -1) {
-		if (_add_adc(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS)
+		if (_add_adc(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
+		}
+	}
+	if (_add_ananas(fpga_id, allocated_module) != NMPM_PLUGIN_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
 	}
 	return NMPM_PLUGIN_SUCCESS;
 
@@ -1102,6 +1118,30 @@ static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module)
 		return NMPM_PLUGIN_FAILURE;
 	}
 	allocated_module->active_trigger[trigger_id] = true;
+	return NMPM_PLUGIN_SUCCESS;
+}
+
+static int _add_ananas(size_t fpga_id, wafer_res_t *allocated_module)
+{
+	size_t trigger_id = 0;
+	size_t ananas_id = 0;
+	bool has_ananas = false;
+	if (hwdb4c_FPGAOnWafer_toTriggerOnWafer(fpga_id, &trigger_id) != HWDB4C_SUCCESS) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion FPGAOnWafer %zu to TriggerOnWafer failed", fpga_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
+	if (hwdb4c_TriggerOnWafer_toANANASOnWafer(trigger_id, &ananas_id) != HWDB4C_SUCCESS) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion TriggerOnWafer %zu to ANANASOnWafer failed", trigger_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
+	size_t global_ananas_id = allocated_module->wafer_id * NUM_ANANAS_PER_WAFER + ananas_id;
+	if (hwdb4c_has_ananas_entry(hwdb_handle, global_ananas_id, &has_ananas) != HWDB4C_SUCCESS) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "HWDB lookup of ANANASGlobal %zu failed", global_ananas_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
+	if (has_ananas) {
+		allocated_module->active_ananas[ananas_id] = true;
+	}
 	return NMPM_PLUGIN_SUCCESS;
 }
 
