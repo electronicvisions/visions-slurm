@@ -657,7 +657,22 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		slurm_neighbor_licenses_raw_string[strlen(slurm_neighbor_licenses_raw_string) - 1] = '\0';
 	}
 	strcat(slurm_neighbor_licenses_environment_string, slurm_neighbor_licenses_raw_string);
-	strcat(slurm_licenses_string, slurm_neighbor_licenses_raw_string);
+
+	// add neighbor licenses to allocated license but only if not already present
+	char *license_token = NULL;
+	char *save_ptr = NULL;
+	license_token = strtok_r(slurm_neighbor_licenses_raw_string, ",", &save_ptr);
+	while(license_token != NULL) {
+		if(strstr(slurm_licenses_string, license_token) == NULL) {
+			strcat(slurm_licenses_string, license_token);
+			strcat(slurm_licenses_string, ",");
+		}
+		license_token = strtok_r(NULL, ",", &save_ptr);
+	}
+	if(strlen(slurm_licenses_string) > 1) {
+		slurm_licenses_string[strlen(slurm_licenses_string) - 1] = '\0';
+	}
+
 	if(strlen(slurm_neighbor_hicanns_environment_string) > 1) {
 		slurm_neighbor_hicanns_environment_string[strlen(slurm_neighbor_hicanns_environment_string) - 1] = '\0';
 	}
