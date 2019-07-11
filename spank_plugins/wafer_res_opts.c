@@ -87,19 +87,19 @@ struct spank_option my_spank_options[] = {
      "Optional path to custom hardware database. If not given default hardware "
      "database path is used.",
      1, 0, (spank_opt_cb_f)_check_opt},
-    {"skip-master-alloc", "[0/1]",
+    {"skip-master-alloc", "",
      "Skip the automated allocation of the master FPGA (12) in case multiple "
-     "FPGAs are requested. Default is 0",
+     "FPGAs are requested",
      0, 0, (spank_opt_cb_f)_no_op},
-    {"without-trigger", "[0/1]",
-     "Skip the automated allocation of adc trigger group licenses. Default is 0",
+    {"without-trigger", "",
+     "Skip the automated allocation of adc trigger group licenses",
      0, 0, (spank_opt_cb_f)_no_op},
-    {"skip-hicann-init", "[0/1]",
-     "Skip the automated initialization of neighbouring licenses. Default is 0"
+    {"skip-hicann-init", "",
+     "Skip the automated initialization of neighbouring licenses"
      "Cannot be specified together with 'force-hicann-init'.",
      0, 0, (spank_opt_cb_f)_no_op},
-    {"force-hicann-init", "[0/1]",
-     "Force the automated initialization of all neighbouring licenses. Default is 0"
+    {"force-hicann-init", "",
+     "Force the automated initialization of all neighbouring licenses"
      "Cannot be specified together with 'skip-hicann-init'.",
      0, 0, (spank_opt_cb_f)_no_op},
     SPANK_OPTIONS_TABLE_END};
