@@ -25,8 +25,12 @@ add_if_exists() {
 # determine which singularity app to run the given command in
 determine_singularity_app() {
     # currently, we run all slurm-related commands on slurmviz in
-    # visionary-wafer and without any app on hosts
-    if [ "$(hostname)" = "slurmviz" ]; then
+    # visionary-wafer and without any app on hosts.
+    # We allow users to specify an app to allow interoperability between other
+    # container based apps and singularity (e.g., meta-nmpm-software).
+    if [ -n "${CLUSTERIZE_APP:-}" ]; then
+        echo "--app ${CLUSTERIZE_APP}"
+    elif [ "$(hostname)" = "slurmviz" ]; then
         echo "--app visionary-wafer"
     fi
 }
