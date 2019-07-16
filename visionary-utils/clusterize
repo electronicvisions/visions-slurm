@@ -51,8 +51,10 @@ else
   # restore variables for singularity containers
   restore_singularity_env
 
-  # stupid symlink because mysql cannot be configured
-  ln -sf /run/mysqld/mysqld.sock /tmp/mysql.sock
+  # stupid symlink on slurmviz because mysql cannot be configured
+  if [ "$(hostname)" = "slurmviz" ]; then
+      ln -sf /run/mysqld/mysqld.sock /tmp/mysql.sock
+  fi
 
   # there is an existing slurm config (probably from the jessie cluster) that
   # will probably be mounted into singularity container -> work around it by
