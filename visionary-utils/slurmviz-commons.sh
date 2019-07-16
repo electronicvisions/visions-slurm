@@ -19,21 +19,21 @@ if [ -z "${CLUSTERIZE_INSTALL_TYPE}" ]; then
     echo "$(realpath -P "${BASH_SOURCE[0]}"), this should not happen!" >&2
 fi
 
-if [ -z "${SPACK_SETUP_ENV}" ]; then
+if [ -z "${SPACK_SETUP_ENV:-}" ]; then
   SPACK_SETUP_ENV="/opt/spack/share/spack/setup-env.sh"
 fi
 
 SINGULARITY_COMMANDS="$(dirname "$(realpath -P "${BASH_SOURCE[0]}")")/singularity-commands.sh"
 
-if [ -z "${CLUSTERIZE_PREFIX}" ]; then
+if [ -z "${CLUSTERIZE_PREFIX:-}" ]; then
   CLUSTERIZE_PREFIX="/opt/${CLUSTERIZE_INSTALL_TYPE}"
 fi
 
-if [ -z "${HWDB_ROOT}" ]; then
+if [ -z "${HWDB_ROOT:-}" ]; then
   HWDB_ROOT="${CLUSTERIZE_PREFIX//slurm/hwdb}"
 fi
 
-if [ -z "${DEPLOY_ROOT}" ]; then
+if [ -z "${DEPLOY_ROOT:-}" ]; then
   DEPLOY_ROOT="${CLUSTERIZE_PREFIX}/deployed"
 fi
 
