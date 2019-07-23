@@ -144,7 +144,7 @@ cmd_all() {
 
   echo "" >&2
   echo "Installed slurm, do not forget to start the corresponding services:" >&2
-  echo -e "\\tsystemctl start slurm{ctl,db}d@${CLUSTERIZE_INSTALL_TYPE}" >&2
+  echo -e "\\tsystemctl start slurm{ctl,db}d@${CLUSTERIZE_INSTALL_TYPE#slurm-}" >&2
   echo "" >&2
 }
 
