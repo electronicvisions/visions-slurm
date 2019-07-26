@@ -1191,14 +1191,22 @@ static int _allocate_neighbor(size_t hicann_id,
                         wafer_res_t *allocated_module,
                         int (*get_neighbor)(size_t, size_t*))
 {
-	size_t hicann_neibour_id;
+	size_t hicann_neighbor_id;
 	size_t fpga_id;
-	if (get_neighbor(hicann_id, &hicann_neibour_id) == NMPM_PLUGIN_SUCCESS) {
-		if (!allocated_module->active_hicanns[hicann_neibour_id]) {
-			allocated_module->active_hicann_neighbor[hicann_neibour_id] = true;
-		}
-		if (hwdb4c_HICANNOnWafer_toFPGAOnWafer(hicann_neibour_id, &fpga_id) != NMPM_PLUGIN_SUCCESS) {
+	bool has_fpga_entry = false;
+	if (get_neighbor(hicann_id, &hicann_neighbor_id) == HWDB4C_SUCCESS) {
+		if (hwdb4c_HICANNOnWafer_toFPGAOnWafer(hicann_neighbor_id, &fpga_id) != HWDB4C_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
+		}
+		if (hwdb4c_has_fpga_entry(hwdb_handle, allocated_module->wafer_id * NUM_FPGAS_ON_WAFER + fpga_id, &has_fpga_entry) != HWDB4C_SUCCESS) {
+			return NMPM_PLUGIN_FAILURE;
+		}
+		// if no fpga in hwdb nothing to do
+		if (!has_fpga_entry) {
+			return NMPM_PLUGIN_SUCCESS;
+		}
+		if (!allocated_module->active_hicanns[hicann_neighbor_id]) {
+			allocated_module->active_hicann_neighbor[hicann_neighbor_id] = true;
 		}
 		if (!allocated_module->active_fpgas[fpga_id]) {
 			allocated_module->active_fpga_neighbor[fpga_id] = true;
