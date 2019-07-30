@@ -102,6 +102,9 @@ struct spank_option my_spank_options[] = {
      "Force the automated initialization of all neighbouring licenses"
      "Cannot be specified together with 'skip-hicann-init'.",
      0, 0, (spank_opt_cb_f)_no_op},
+    {"powercycle", "",
+     "Powercycle the given HW resources. Only available for DLS setups atm.",
+     0, 0, (spank_opt_cb_f)_no_op},
     SPANK_OPTIONS_TABLE_END};
 
 static int _check_opt(int val, const char* optarg, int remote)
