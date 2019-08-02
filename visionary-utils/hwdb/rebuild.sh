@@ -24,9 +24,6 @@ PATH_CONTAINER="${PATH_SLURM}/container"
 
 pushd "${PATH_HWDB}"
 
-# ensure current modules are deleted
-rm /run/slurm-skretch-obreitwi-testing/current_modules.sh || true
-
 CMD="singularity exec -B $PWD -a visionary-wafer ${PATH_CONTAINER}"
 
 # ensure empty
