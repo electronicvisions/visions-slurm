@@ -247,13 +247,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		goto CLEANUP;
 	}
 
-	//check if at least one wafer module given
-	if (parsed_options[_option_lookup("wmod")].num_arguments == 0) {
-		snprintf(my_errmsg, MAX_ERROR_LENGTH, "No wafer module given!");
-		retval = ESLURM_INVALID_LICENSES;
-		goto CLEANUP;
-	}
-
 	//check if wmod is only hw option given
 	for (counter = WMOD_DEPENDENT_MIN_INDEX; counter <= WMOD_DEPENDENT_MAX_INDEX; counter++) {
 		if (parsed_options[counter].num_arguments > 0) {
@@ -382,7 +375,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 				retval = SLURM_ERROR;
 				goto CLEANUP;
 	}
-
 	// look at other options if only one wafer module was specified and other resource arguments
 	else if (!wmod_only_hw_option) {
 		for (argcount = 0; argcount < parsed_options[_option_lookup("reticle_without_aout")].num_arguments; argcount++) {
@@ -909,6 +901,7 @@ static int _parse_options(struct job_descriptor const *job_desc, option_entry_t 
 		if (option==NULL) {
 			goto PARSE_OPTIONS_CLEANUP;
 		}
+		*zero_res_args = false;
 
 		//truncate SPANK_OPT_PREFIX
 		option += strlen(SPANK_OPT_PREFIX);
@@ -944,7 +937,6 @@ static int _parse_options(struct job_descriptor const *job_desc, option_entry_t 
 				goto PARSE_OPTIONS_CLEANUP;
 			}
 			argcount = parsed_options[_option_lookup(option)].num_arguments;
-			*zero_res_args = false;
 			argument_token = strtok_r(arguments, ",", &save_ptr);
 			while(argument_token != NULL) {
 				strcpy(parsed_options[_option_lookup(option)].arguments[argcount], argument_token);
