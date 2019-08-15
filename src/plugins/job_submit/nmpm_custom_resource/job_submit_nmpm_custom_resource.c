@@ -218,6 +218,12 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	char* adc_environment_string = NULL;
 	int retval = SLURM_ERROR;
 
+	if (job_desc->licenses) {
+		snprintf(my_errmsg, MAX_ERROR_LENGTH, "Manual licenses not supported");
+		retval = ESLURM_NOT_SUPPORTED;
+		goto CLEANUP;
+	}
+
 	// init variables
 	for (optioncounter = 0; optioncounter < NUM_OPTIONS; optioncounter++) {
 		parsed_options[optioncounter].num_arguments = 0;
