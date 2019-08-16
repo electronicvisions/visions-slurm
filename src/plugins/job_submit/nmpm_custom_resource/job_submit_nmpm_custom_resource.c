@@ -1265,6 +1265,10 @@ static int _get_powercycle_info(struct job_descriptor *job_desc, char **return_i
 				snprintf(function_error_msg, MAX_ERROR_LENGTH, "Failed to aquire DLS setup entry %s", dls_setup_ids[i]);
 				return NMPM_PLUGIN_FAILURE;
 			}
+			if(strcmp(dls->ntpwr_ip, " ") == 0) {
+				snprintf(function_error_msg, MAX_ERROR_LENGTH, "Setup %s cannot be powercycled via ethernet", dls_setup_ids[i]);
+				return NMPM_PLUGIN_FAILURE;
+			}
 			*return_info = xmalloc(strlen(info_template) +
 			                       strlen(dls->ntpwr_ip) +
 			                       2 /*, and '\0'*/ +
