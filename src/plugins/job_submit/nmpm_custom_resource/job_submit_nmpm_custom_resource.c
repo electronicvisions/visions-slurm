@@ -617,15 +617,20 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			}
 		}
 		if(!skip_master_alloc) {
-			//check if more than one FPGA was requested, if true also request master FPGA
-			for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
-				if(allocated_modules[modulecounter].active_fpgas[fpgacounter]) {
-					num_active_fpgas++;
-				}
-				if(num_active_fpgas > 1) {
-					allocated_modules[modulecounter].active_fpgas[hwdb4c_master_FPGA_enum()] = true;
-					// more than one fpga found -> no more searching needed
-					break;
+			size_t const global_fpga_id = hwdb4c_master_FPGA_enum() + allocated_modules[modulecounter].wafer_id * NUM_FPGAS_ON_WAFER;
+			bool has_fpga_entry = false;
+
+			if ((hwdb4c_has_fpga_entry(hwdb_handle, global_fpga_id, &has_fpga_entry) == HWDB4C_SUCCESS) && has_fpga_entry) {
+				//check if more than one FPGA was requested, if true also request master FPGA
+				for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
+					if(allocated_modules[modulecounter].active_fpgas[fpgacounter]) {
+						num_active_fpgas++;
+					}
+					if(num_active_fpgas > 1) {
+						allocated_modules[modulecounter].active_fpgas[hwdb4c_master_FPGA_enum()] = true;
+						// more than one fpga found -> no more searching needed
+						break;
+					}
 				}
 			}
 		}
