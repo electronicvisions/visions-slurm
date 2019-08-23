@@ -33,7 +33,7 @@ if [ -z "${CLUSTERIZE_SET_UP:-}" ]; then
   # for nested singularity calls from the slurmd-container
   escape_singularity_env
   if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
-    echo "# The following SINGULARITYENV_ variables are defined:"
+    echo "# The following SINGULARITYENV_ variables are defined:" >&2
     env | grep "^SINGULARITYENV_" | sed "s:^:# :"
   fi
 

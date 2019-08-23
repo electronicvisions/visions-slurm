@@ -206,6 +206,9 @@ escape_singularity_env() {
   # to work around:
   # We map SINGULARITYENV_<var> to SINGULARITYENV_CLUSTERIZEENV_<var> and call
   # restore_singularity_env inside the container to map back.
+  # We do not want the current SINGULARITYENV_ variables to clutter the
+  # environment of the inner process -> we need to unset them.
+  # This can be disabled (for debugging purposes) via CLUSTERIZE_NO_CLEAN_SENV.
   source <(
   FILE_AWK=$(mktemp)
   finish() {
@@ -215,13 +218,26 @@ escape_singularity_env() {
   cat >"${FILE_AWK}" <<EOF
 BEGIN {
   verbose=$([ -n "${CLUSTERIZE_VERBOSE+x}" ] && echo 1 || echo 0)
+  keep_singularity_env=$([ -n "${CLUSTERIZE_NO_CLEAN_SENV+x}" ] && echo 1 || echo 0)
+
+  if (keep_singularity_env && verbose) {
+    printf("# User requested _NOT_ clearing SINGULARITYENV_-variables because ")
+    printf("CLUSTERIZE_NO_CLEAN_SENV was set.\n")
+  }
 }
 
-\$1 ~ /^SINGULARITYENV_/ {
+(\$1 ~ /^SINGULARITYENV_/) || (\$1 ~ /^PATH$/) || (\$1 ~ /^LD_LIBRARY_PATH$/) {
+  var_name=\$1
+  var_value=\$2
   if (verbose) {
-    printf("echo \"# Escaping for nested singularity environments: %s\"\n", \$1)
+    printf("echo \"# Escaping for nested singularity environments: %s\"\n", var_name)
   }
-  printf("export SINGULARITYENV_CLUSTERIZEENV_%s=\"%s\"\n", \$1, \$2)
+  printf("export SINGULARITYENV_CLUSTERIZEENV_%s=\"%s\"\n", var_name, var_value)
+
+  # Don't unset PATH/LD_LIBRARY_PATH here
+  if (!keep_singularity_env && (\$1 ~ /^SINGULARITYENV_/)) {
+    printf("unset %s\n", var_name)
+  }
 }
 EOF
   env | awk -F = -f "${FILE_AWK}"
