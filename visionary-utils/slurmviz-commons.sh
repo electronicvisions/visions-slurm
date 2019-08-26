@@ -280,7 +280,7 @@ export_hwdb_env() {
 }
 
 export_slurm_env() {
-  export PATH=${DEPLOY_ROOT}/bin:${PATH:+:${PATH}}
+  export PATH=${DEPLOY_ROOT}/bin${PATH:+:${PATH}}
   # all exectuables are built via RPATH
 }
 
