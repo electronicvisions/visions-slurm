@@ -1256,6 +1256,10 @@ static int _get_powercycle_info(struct job_descriptor *job_desc, char **return_i
 		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Given pointer non-null");
 		return NMPM_PLUGIN_FAILURE;
 	}
+	if (!job_desc->gres) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Powercycle requested but no gres given");
+		return NMPM_PLUGIN_FAILURE;
+	}
 
 	// overall goal is to get ip and slot of network poweroutlet
 	// * get all dls setups
