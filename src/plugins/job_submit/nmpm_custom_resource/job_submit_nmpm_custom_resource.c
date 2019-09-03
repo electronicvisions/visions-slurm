@@ -22,6 +22,7 @@
 #include "hwdb4cpp/hwdb4c.h"
 #include "slurm/slurm.h"
 #include "slurm/slurm_errno.h"
+#include "slurm/vision_defines.h"
 #include "src/common/slurm_xlator.h"
 #include "src/slurmctld/slurmctld.h"
 
@@ -40,9 +41,10 @@
 #define MAX_ERROR_LENGTH 5000
 #define MAX_ADC_COORD_LENGTH 100
 #define MAX_ENV_NAME_LENGTH 50
-#define MAX_HICANN_ENV_LENGTH_PER_WAFER (6 * NUM_HICANNS_ON_WAFER + MAX_ENV_NAME_LENGTH)
+#define MAX_LICENSE_STRING_LENGTH 9 //WxxxHyyy,WxxxHyyy,....
+#define MAX_HICANN_ENV_LENGTH_PER_WAFER (MAX_LICENSE_STRING_LENGTH * NUM_HICANNS_ON_WAFER + MAX_ENV_NAME_LENGTH)
 #define MAX_ADC_ENV_LENGTH_PER_WAFER (MAX_ADC_COORD_LENGTH * MAX_ADCS_PER_WAFER + MAX_ENV_NAME_LENGTH)
-#define MAX_LICENSE_STRING_LENGTH_PER_WAFER (MAX_ADC_COORD_LENGTH * MAX_ADCS_PER_WAFER + NUM_HICANNS_ON_WAFER * 6 + MAX_ADC_COORD_LENGTH * NUM_ANANAS_PER_WAFER)
+#define MAX_LICENSE_STRING_LENGTH_PER_WAFER (MAX_ADC_COORD_LENGTH * MAX_ADCS_PER_WAFER + NUM_HICANNS_ON_WAFER * MAX_LICENSE_STRING_LENGTH + NUM_ANANAS_PER_WAFER * MAX_LICENSE_STRING_LENGTH)
 #define NMPM_PLUGIN_SUCCESS 0
 #define NMPM_PLUGIN_FAILURE -1
 #define NMPM_MAGIC_BINARY_OPTION "praise the sun"
@@ -181,6 +183,9 @@ static int _allocate_neighbor(size_t hicann_id, wafer_res_t *allocated_module, i
 /* Extract information for powercycle script in prolog script. */
 static int _get_powercycle_info(struct job_descriptor *job_desc, char **info);
 
+/* Convert give id with provided to_slurm_license conversion function to license string and append to env_string. */
+static int _append_slurm_license(size_t id, int (*to_slurm_license)(size_t, char**), char *env_string);
+
 /***********************\
 * function definitions *
 \***********************/
@@ -213,7 +218,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	char* slurm_neighbor_hicanns_environment_string = NULL;
 	char* slurm_neighbor_licenses_raw_string = NULL;
 	char* slurm_neighbor_licenses_environment_string = NULL;
-	char* slurm_hicann_init_envvar = NULL; // holds info about automated hicann init
+	char* slurm_hicann_init_env = NULL; // holds info about automated hicann init
 	char* hicann_environment_string = NULL;
 	char* adc_environment_string = NULL;
 	int retval = SLURM_ERROR;
@@ -547,38 +552,39 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	slurm_licenses_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + 1);
 	strcpy(slurm_licenses_string, "");
 
-	char slurm_licenses_env_name[] = "HARDWARE_LICENSES=";
-	slurm_licenses_environment_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + strlen(slurm_licenses_env_name) + 1);
-	strcpy(slurm_licenses_environment_string, slurm_licenses_env_name);
+	// add +2, one for '\0' and one for '='
+	slurm_licenses_environment_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + strlen(vision_slurm_hardware_licenses_env_name) + 2);
+	strcpy(slurm_licenses_environment_string, vision_slurm_hardware_licenses_env_name);
+	strcat(slurm_licenses_environment_string, "=");
 
-	char hicann_env_name[] = "ALLOCATED_HICANNGLOBAL=";
-	hicann_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(hicann_env_name) + 1);
-	strcpy(hicann_environment_string, hicann_env_name);
+	hicann_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(vision_slurm_hicanns_env_name) + 2);
+	strcpy(hicann_environment_string, vision_slurm_hicanns_env_name);
+	strcat(hicann_environment_string, "=");
 
-	char adc_env_name[] = "ALLOCATED_ADC=";
-	adc_environment_string = xmalloc(num_allocated_modules * MAX_ADC_ENV_LENGTH_PER_WAFER + strlen(adc_env_name) + 1);
-	strcpy(adc_environment_string, adc_env_name);
+	adc_environment_string = xmalloc(num_allocated_modules * MAX_ADC_ENV_LENGTH_PER_WAFER + strlen(vision_slurm_adcs_env_name) + 2);
+	strcpy(adc_environment_string, vision_slurm_adcs_env_name);
+	strcat(adc_environment_string, "=");
 
 	slurm_neighbor_licenses_raw_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + 1);
 	strcpy(slurm_neighbor_licenses_raw_string, "");
 
-	char slurm_neighbor_licenses_env_name[] = "SLURM_NEIGHBOR_LICENSES=";
-	slurm_neighbor_licenses_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(slurm_neighbor_licenses_env_name) + 1);
-	strcpy(slurm_neighbor_licenses_environment_string, slurm_neighbor_licenses_env_name);
+	slurm_neighbor_licenses_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(vision_slurm_neighbor_licenses_env_name) + 2);
+	strcpy(slurm_neighbor_licenses_environment_string, vision_slurm_neighbor_licenses_env_name);
+	strcat(slurm_neighbor_licenses_environment_string, "=");
 
-	char slurm_neighbor_hicanns_env_name[] = "SLURM_NEIGHBOR_HICANNS=";
-	slurm_neighbor_hicanns_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(slurm_neighbor_hicanns_env_name) + 1);
-	strcpy(slurm_neighbor_hicanns_environment_string, slurm_neighbor_hicanns_env_name);
+	slurm_neighbor_hicanns_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(vision_slurm_neighbor_hicanns_env_name) + 2);
+	strcpy(slurm_neighbor_hicanns_environment_string, vision_slurm_neighbor_hicanns_env_name);
+	strcat(slurm_neighbor_hicanns_environment_string, "=");
 
-	char const slurm_hicann_init_envvar_name[] = "SLURM_HICANN_INIT=";
-	slurm_hicann_init_envvar = xmalloc(strlen(slurm_hicann_init_envvar_name) + (7 + 1));
-	strcpy(slurm_hicann_init_envvar, slurm_hicann_init_envvar_name);
+	// add value to HICANN init env var, malloc for largets value, i.e. '=DEFAULT'
+	slurm_hicann_init_env = xmalloc(strlen(vision_slurm_hicann_init_env_name) + (8 + 1));
+	strcpy(slurm_hicann_init_env, vision_slurm_hicann_init_env_name);
 	if(skip_hicann_init) {
-		strcat(slurm_hicann_init_envvar, "SKIP");
+		strcat(slurm_hicann_init_env, "=SKIP");
 	} else if(force_hicann_init) {
-		strcat(slurm_hicann_init_envvar, "FORCE");
+		strcat(slurm_hicann_init_env, "=FORCE");
 	} else {
-		strcat(slurm_hicann_init_envvar, "DEFAULT");
+		strcat(slurm_hicann_init_env, "=DEFAULT");
 	}
 
 
@@ -593,8 +599,12 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 
 		for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
 			if (allocated_modules[modulecounter].active_hicanns[hicanncounter]) {
-				snprintf(tempstring, MAX_ADC_COORD_LENGTH, "%zu,", allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter );
-				strcat(hicann_environment_string, tempstring);
+				size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter;
+				if( _append_slurm_license(global_id, hwdb4c_HICANNGlobal_slurm_license, hicann_environment_string) != NMPM_PLUGIN_SUCCESS) {
+					snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for HICANN %lu failed", global_id);
+					retval = SLURM_ERROR;
+					goto CLEANUP;
+				}
 				// calculate neighbors
 				if(!skip_hicann_init) {
 					_add_neighbors(hicanncounter, &allocated_modules[modulecounter]);
@@ -605,14 +615,22 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		if(!skip_hicann_init) {
 			for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
 				if (allocated_modules[modulecounter].active_hicann_neighbor[hicanncounter]) {
-					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuH%zu,", allocated_modules[modulecounter].wafer_id, hicanncounter);
-					strcat(slurm_neighbor_hicanns_environment_string, tempstring);
+					size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter;
+					if( _append_slurm_license(global_id, hwdb4c_HICANNGlobal_slurm_license, slurm_neighbor_hicanns_environment_string) != NMPM_PLUGIN_SUCCESS) {
+						snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for HICANN %lu failed", global_id);
+						retval = SLURM_ERROR;
+						goto CLEANUP;
+					}
 				}
 			}
 			for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
 				if (allocated_modules[modulecounter].active_fpga_neighbor[fpgacounter]) {
-					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuF%zu,", allocated_modules[modulecounter].wafer_id, fpgacounter );
-					strcat(slurm_neighbor_licenses_raw_string, tempstring);
+					size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_FPGAS_ON_WAFER + fpgacounter;
+					if( _append_slurm_license(global_id, hwdb4c_FPGAGlobal_slurm_license, slurm_neighbor_licenses_raw_string) != NMPM_PLUGIN_SUCCESS) {
+						snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for FPGA %lu failed", global_id);
+						retval = SLURM_ERROR;
+						goto CLEANUP;
+					}
 				}
 			}
 		}
@@ -636,8 +654,12 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		}
 		for (fpgacounter = 0; fpgacounter < NUM_FPGAS_ON_WAFER; fpgacounter++) {
 			if (allocated_modules[modulecounter].active_fpgas[fpgacounter]) {
-				snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuF%zu,", allocated_modules[modulecounter].wafer_id, fpgacounter );
-				strcat(slurm_licenses_string, tempstring);
+				size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_FPGAS_ON_WAFER + fpgacounter;
+				if( _append_slurm_license(global_id, hwdb4c_FPGAGlobal_slurm_license, slurm_licenses_string) != NMPM_PLUGIN_SUCCESS) {
+					snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for FPGA %lu failed", global_id);
+					retval = SLURM_ERROR;
+					goto CLEANUP;
+				}
 			}
 		}
 		for (adccounter = 0; adccounter < allocated_modules[modulecounter].num_active_adcs; adccounter++) {
@@ -648,26 +670,34 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		if(!without_trigger) {
 			for (triggercounter = 0; triggercounter < NUM_TRIGGER_PER_WAFER; triggercounter++) {
 				if (allocated_modules[modulecounter].active_trigger[triggercounter]) {
-					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuT%zu,", allocated_modules[modulecounter].wafer_id, triggercounter );
-					strcat(slurm_licenses_string, tempstring);
+					size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_TRIGGER_PER_WAFER + triggercounter;
+					if( _append_slurm_license(global_id, hwdb4c_TriggerGlobal_slurm_license, slurm_licenses_string) != NMPM_PLUGIN_SUCCESS) {
+						snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for Trigger %lu failed", global_id);
+						retval = SLURM_ERROR;
+						goto CLEANUP;
+					}
 				}
 			}
 			for (ananascounter = 0; ananascounter < NUM_ANANAS_PER_WAFER; ananascounter++) {
 				if (allocated_modules[modulecounter].active_ananas[ananascounter]) {
-					snprintf(tempstring, MAX_ADC_COORD_LENGTH, "W%zuA%zu,", allocated_modules[modulecounter].wafer_id, ananascounter );
-					strcat(slurm_licenses_string, tempstring);
+					size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_ANANAS_PER_WAFER + ananascounter;
+					if( _append_slurm_license(global_id, hwdb4c_ANANASGlobal_slurm_license, slurm_licenses_string) != NMPM_PLUGIN_SUCCESS) {
+						snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for ANANAS %lu failed", global_id);
+						retval = SLURM_ERROR;
+						goto CLEANUP;
+					}
 				}
 			}
 		}
 	}
 
+	// delete trailing ','
+	if(strlen(slurm_licenses_string) > 1) {
+		slurm_licenses_string[strlen(slurm_licenses_string) - 1] = '\0';
+	}
 	// first cat licenses to environment string that add neighbors to the requestes allocations, which are later removed in prolog script
 	strcat(slurm_licenses_environment_string, slurm_licenses_string);
-	// delete trailing ','
-	if(strlen(slurm_licenses_environment_string) > 1) {
-		slurm_licenses_environment_string[strlen(slurm_licenses_environment_string) - 1] = '\0';
-	}
-	if(strlen(hicann_environment_string) > 1) {
+	if(strlen(hicann_environment_string) > strlen(hicann_environment_string) + 1) {
 		hicann_environment_string[strlen(hicann_environment_string) - 1] = '\0';
 	}
 	if(strlen(slurm_neighbor_licenses_raw_string) > 1) {
@@ -681,19 +711,16 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	license_token = strtok_r(slurm_neighbor_licenses_raw_string, ",", &save_ptr);
 	while(license_token != NULL) {
 		if(strstr(slurm_licenses_string, license_token) == NULL) {
-			strcat(slurm_licenses_string, license_token);
 			strcat(slurm_licenses_string, ",");
+			strcat(slurm_licenses_string, license_token);
 		}
 		license_token = strtok_r(NULL, ",", &save_ptr);
 	}
-	if(strlen(slurm_licenses_string) > 1) {
-		slurm_licenses_string[strlen(slurm_licenses_string) - 1] = '\0';
-	}
 
-	if(strlen(slurm_neighbor_hicanns_environment_string) > 1) {
+	if(strlen(slurm_neighbor_hicanns_environment_string) > strlen(slurm_neighbor_hicanns_environment_string) + 1) {
 		slurm_neighbor_hicanns_environment_string[strlen(slurm_neighbor_hicanns_environment_string) - 1] = '\0';
 	}
-	if(strlen(adc_environment_string) > 1) {
+	if(strlen(adc_environment_string) > strlen(vision_slurm_adcs_env_name) + 1) {
 		adc_environment_string[strlen(adc_environment_string) - 1] = '\0';
 	}
 
@@ -702,7 +729,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	job_desc->environment[job_desc->env_size + 1] = xstrdup(adc_environment_string);
 	job_desc->environment[job_desc->env_size + 2] = xstrdup(slurm_licenses_environment_string);
 	job_desc->environment[job_desc->env_size + 3] = xstrdup(slurm_neighbor_licenses_environment_string);
-	job_desc->environment[job_desc->env_size + 4] = xstrdup(slurm_hicann_init_envvar);
+	job_desc->environment[job_desc->env_size + 4] = xstrdup(slurm_hicann_init_env);
 	job_desc->environment[job_desc->env_size + 5] = xstrdup(slurm_neighbor_hicanns_environment_string);
 	job_desc->env_size += 6;
 	//set slurm licenses (including neighbor licenses, those will be removed in prolog script)
@@ -723,7 +750,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 
 	// write prolog relevant information into slurm admin comment
 	size_t admin_comment_size = strlen(slurm_neighbor_licenses_environment_string) +
-	                            strlen(slurm_hicann_init_envvar) +
+	                            strlen(slurm_hicann_init_env) +
 	                            strlen(slurm_licenses_environment_string) + 2 /* 2x;*/ + 1;
 	if (job_desc->admin_comment) {
 		admin_comment_size += strlen(job_desc->admin_comment);
@@ -733,7 +760,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	}
 	xstrcat(job_desc->admin_comment, slurm_neighbor_licenses_environment_string);
 	xstrcat(job_desc->admin_comment, ";");
-	xstrcat(job_desc->admin_comment, slurm_hicann_init_envvar);
+	xstrcat(job_desc->admin_comment, slurm_hicann_init_env);
 	xstrcat(job_desc->admin_comment, ";");
 	xstrcat(job_desc->admin_comment, slurm_licenses_environment_string);
 	if(powercycle_info) {
@@ -772,8 +799,8 @@ CLEANUP:
 	if (slurm_neighbor_hicanns_environment_string) {
 		xfree(slurm_neighbor_hicanns_environment_string);
 	}
-	if (slurm_hicann_init_envvar) {
-		xfree(slurm_hicann_init_envvar);
+	if (slurm_hicann_init_env) {
+		xfree(slurm_hicann_init_env);
 	}
 	if (adc_environment_string) {
 		xfree(adc_environment_string);
@@ -1268,7 +1295,6 @@ static int _get_powercycle_info(struct job_descriptor *job_desc, char **return_i
 	char** dls_setup_ids = NULL;
 	size_t dls_setup_ids_size;
 	size_t i;
-	char info_template[] = "SLURM_POWERCYCLE=";
 	if (hwdb4c_get_dls_setup_ids(hwdb_handle, &dls_setup_ids, &dls_setup_ids_size) != HWDB4C_SUCCESS) {
 		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Could not get DLS setup IDs");
 		return NMPM_PLUGIN_FAILURE;
@@ -1284,13 +1310,27 @@ static int _get_powercycle_info(struct job_descriptor *job_desc, char **return_i
 				snprintf(function_error_msg, MAX_ERROR_LENGTH, "Setup %s cannot be powercycled via ethernet", dls_setup_ids[i]);
 				return NMPM_PLUGIN_FAILURE;
 			}
-			*return_info = xmalloc(strlen(info_template) +
+			*return_info = xmalloc(strlen(vision_slurm_powercycle_env_name) +
 			                       strlen(dls->ntpwr_ip) +
 			                       2 /*, and '\0'*/ +
 			                       21 /*ntpwr_slot is size_t so max 21 chars to represent number*/);
-			sprintf(*return_info, "%s%s,%lu", info_template, dls->ntpwr_ip, dls->ntpwr_slot);
+			sprintf(*return_info, "%s%s,%lu", vision_slurm_powercycle_env_name, dls->ntpwr_ip, dls->ntpwr_slot);
 			hwdb4c_free_dls_setup_entry(dls);
 		}
 	}
+	return NMPM_PLUGIN_SUCCESS;
+}
+
+static int _append_slurm_license(size_t id,
+                        int (*to_slurm_license)(size_t, char**),
+                        char* env_string)
+{
+	char* license_string = NULL;
+	if( to_slurm_license(id, &license_string) != HWDB4C_SUCCESS) {
+		return NMPM_PLUGIN_FAILURE;
+	}
+	strcat(env_string, license_string);
+	strcat(env_string, ",");
+	free(license_string);
 	return NMPM_PLUGIN_SUCCESS;
 }
