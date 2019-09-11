@@ -82,6 +82,7 @@ EOF
 
 get_config_opts() {
 cat <<EOF | tr '\n' ' '
+CFLAGS=-g
 --prefix=${DEPLOY_ROOT}
 --enable-pam
 --with-hdf5=$(spack location -i "$(get_latest_version hdf5)")
