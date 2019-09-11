@@ -16,10 +16,13 @@ if [ -z "${CLUSTERIZE_CONTAINER:-}" ]; then
 fi
 
 add_if_exists() {
-    # Usage: add_if_exists <source> <target>
-    # Add `source` to container under `target` (if specified)
+    # Usage: add_if_exists <source> <target> <alternative>
+    # Add `source` to container under `target` (if specified).
+    # If `source` does not exist, try adding `alternative` (if it exists)
     # NOTE: add_if_exists omits the newline to allow for mount options!
     [ -d "$1" ] && echo -n "-B $1" && [ -n "$2" ] && echo -n ":$2"
+    [ ! -d "$1" ] && [ -d "$3" ] \
+        && echo -n "-B $3" && [ -n "$2" ] && echo -n ":$2"
 }
 
 # determine which singularity app to run the given command in
@@ -79,7 +82,7 @@ if [ "$(hostname)" = "helvetica" ]; then
     fi
 elif [[ "$CLUSTERIZE_INSTALL_TYPE" == *-testing ]]; then
     # we are in the testing build, use the testing munge
-    add_if_exists /run/munge-testing /run/munge
+    add_if_exists /run/munge-testing /run/munge /run/munge
     echo ""
 else
     echo "-B /run/munge"
