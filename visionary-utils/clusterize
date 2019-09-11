@@ -3,10 +3,15 @@
 # support symlinking cluserize to some other location and then lookup the name
 # of the link inside the container
 # Useful for scontrol, srun, sbatch etc...
-if [ "$(basename "$0")" != "clusterize" ]; then
+
+if [ "$(basename "$0")" != "clusterize" ] && [ -z "${CLUSTERIZE_SET_UP:+x}" ]; then
   WRAPPED_CMD=("$(basename "$0")" "$@")
 else
   WRAPPED_CMD=("$@")
+fi
+
+if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
+    echo "# WRAPPED_CMD:" "${WRAPPED_CMD[@]}" >&2
 fi
 
 SCRIPTPATH="$(realpath -P "${BASH_SOURCE[0]}")"
@@ -28,28 +33,29 @@ fi
 
 # see if clusterize was already set up, otherwise we need another singularity
 # call
-if [ -z "${CLUSTERIZE_SET_UP:-}" ]; then
+if [ -z "${CLUSTERIZE_SET_UP:+x}" ]; then
   # escape user supplied SINGULARITYENV-variables so that they are available
   # for nested singularity calls from the slurmd-container
   escape_singularity_env
   if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
     echo "# The following SINGULARITYENV_ variables are defined:" >&2
-    env | grep "^SINGULARITYENV_" | sed "s:^:# :"
+    env | grep "^SINGULARITYENV_" | sed "s:^:# :" >&2
   fi
 
   # we are not in singularity container -> chroot into it
   setup_singularity
   if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
-    echo "# Running: " ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}"
+    echo "# Running:" ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}" >&2
   fi
   export SINGULARITYENV_CLUSTERIZE_SET_UP="yessir"
   ${CMD_SEXEC} "${SCRIPTPATH}" "${WRAPPED_CMD[@]}"
 else
-  # we are in singularity container with correct set up -> prepare env
-  export_slurm_env
-
   # restore variables for singularity containers
   restore_singularity_env
+
+  # we are in singularity container with correct set up -> prepare env also do
+  # it AFTER restore_singularity_env because slurm binaries take precedence
+  export_slurm_env
 
   # stupid symlink on slurmviz because mysql cannot be configured
   if [ "$(hostname)" = "slurmviz" ]; then
@@ -61,6 +67,15 @@ else
   # mounting to /etc/slurm-config and adjust SLURM_CONF environment variable
   # in container
   export SLURM_CONF="/etc/slurm-config/slurm.conf"
+
+  if [ -n "${CLUSTERIZE_VERBOSE+x}" ]; then
+    echo "# Running:" "${WRAPPED_CMD[@]}" >&2
+    echo "# abspath: $(which ${WRAPPED_CMD[0]})" >&2
+  fi
+  unset CLUSTERIZE_SET_UP
+
+  # Unset all variables to be as transparent as possible.
+  # This also allows nested usage of clusterize.
 
   "${WRAPPED_CMD[@]}"
 fi
