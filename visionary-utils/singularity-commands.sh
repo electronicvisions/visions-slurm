@@ -56,7 +56,7 @@ fi
 # BEGIN bind options
 cat <<EOF
 $(add_if_exists "${CLUSTERIZE_PREFIX}" /opt/slurm)
-$(add_if_exists "${CLUSTERIZE_PREFIX}")
+$([ "${CLUSTERIZE_PREFIX}" != /opt/slurm ] && add_if_exists "${CLUSTERIZE_PREFIX}")
 $(add_if_exists "${HWDB_ROOT}")
 $(add_if_exists /run/mysqld)
 $(add_if_exists /run/nscd)
