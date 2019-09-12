@@ -225,7 +225,7 @@ int _toml_table_to_hd_config(toml_table_t* root, hd_config_t* cfg)
 	_TOML_READ_STR(env_name_error_msg)
 
 	// hagen daas defines
-	// jobname fmt specifier having one string placeholder for the board_id
+	// jobname prefix
 	_TOML_READ_STR(scoop_jobname_prefix)
 
 	_TOML_READ_STR(scoop_job_user)
