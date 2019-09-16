@@ -264,7 +264,7 @@ static bool _job_record_valid(struct job_record const*);
 // slurm required functions
 int init(void)
 {
-	running_scoops_l = list_create(_destroy_running_scoop);
+	l_running_scoops = list_create(_destroy_running_scoop);
 	if (hagen_daas_config == NULL)
 	{
 		hd_config_t_load(&hagen_daas_config);
@@ -276,7 +276,7 @@ int init(void)
 void fini(void)
 {
 	slurm_mutex_lock(&mutex_running_scoops_l);
-	list_destroy(running_scoops_l);
+	list_destroy(l_running_scoops);
 	slurm_mutex_unlock(&mutex_running_scoops_l);
 	slurm_mutex_destroy(&mutex_running_scoops_l);
 	if (hagen_daas_config != NULL)
@@ -939,7 +939,7 @@ static running_scoop_t* _board_id_to_scoop(char const* board_id)
 {
 	// first method, try to find scoop in list
 	running_scoop_t* scoop = list_find_first(
-			running_scoops_l, _cmp_scoops_by_board_id, (void *) board_id);
+			l_running_scoops, _cmp_scoops_by_board_id, (void *) board_id);
 
 	if (scoop != NULL)
 	{
@@ -988,7 +988,7 @@ static bool _check_scoop_running(running_scoop_t* scoop)
 static void _remove_scoop_from_list(running_scoop_t* scoop)
 {
 	debug("[hagen-daas] Removing scoop for board id %s.", scoop->board_id);
-	ListIterator itr = list_iterator_create(running_scoops_l);
+	ListIterator itr = list_iterator_create(l_running_scoops);
 	struct running_scoop_t* tmp;
 	while ((tmp = list_next(itr))) {
 		// we are only interested in jobs run by slurm-daemon itself
@@ -1112,7 +1112,7 @@ static void _dump_scoop_list(void)
 	int job_id;
 
 	debug("[hagen-daas] Dumping scoop list contents:");
-	itr = list_iterator_create(running_scoops_l);
+	itr = list_iterator_create(l_running_scoops);
 	running_scoop_t* scoop;
 	while ((scoop = list_next(itr))) {
 		if (!_job_record_valid(scoop->job_record))
