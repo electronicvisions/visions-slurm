@@ -62,18 +62,20 @@ static option_index_t custom_plugin_options[NUM_OPTIONS] = {
 
 typedef struct running_scoop
 {
-	char board_id[64];
+	char board_id[256];
 	char ip[16];
+	uint16_t port;  // actual port used by scoop
 	service_t const* service;
 	struct job_record const* job_record;
 	time_t t_start;
 } running_scoop_t;
 
-static void _destroy_running_scoop(void* ptr)
-{
-	running_scoop_t* cast = ptr;
-	xfree(cast);
-}
+static void _destroy_running_scoop(void* ptr);
+
+/* Add given scoop to the given list of scoops and keep list sorted ascending by
+ * port.
+ */
+static void _track_scoop(running_scoop_t*);
 
 
 /* This mutex is unneeded because of g_context_lock in
@@ -157,11 +159,24 @@ static struct node_record* _gres_to_node(char const* gres);
  */
 static int _cmp_scoops_by_board_id(void *x, void* key);
 
+/* Compare scoops by comparing the ip which is _not_ unique
+ */
+static int _cmp_scoops_by_ip(void *x, void* key);
+
+/* Compare scoops by comparing their ports.
+ */
+static int _cmp_scoops_by_port(void* x, void* y);
+
 /* Check if a scoop is running for the given board id, else return NULL
  *
  */
 static running_scoop_t* _board_id_to_scoop(char const* board_id);
 
+
+/* Find the first port that is not in use, starting at config.scoop_port_lowest
+ * on the given ip. Only other possibly running scoops are checked.
+ */
+static int16_t _find_first_open_port(char const* ip);
 
 /* Launch the given scoop configuration in a job and set the returned job id in
  * scoop
@@ -195,7 +210,6 @@ static bool _check_scoop_running(running_scoop_t* scoop);
 
 /* Remove the given scoop from the list of running scoops.
  *
- * Does not xfree the scoop!
  */
 static void _remove_scoop_from_list(running_scoop_t* scoop);
 
@@ -219,9 +233,20 @@ static bool _check_job_name_for_board_id(
  *
  * Implicitly assumes that the board_id for the scoop is unique!
  */
-static void _associate_scoop_job_record(running_scoop_t* scoop);
+static int _associate_scoop_job_record(running_scoop_t* scoop);
+
+/* Ensure that the port settings in scoop correspond to the port settings in job
+ * environment. This is especially needed if slurmctld is restarted while scoop
+ * jobs are still running.
+ *
+ * Returns HAGEN_DAAS_PLUGIN_SUCCESS on success, HAGEN_DAAS_PLUGIN_FAILURE on
+ * error.
+ */
+static int _sync_port_job_record_to_scoop(running_scoop_t* scoop);
 
 
+/* Find the job record for a given board_id, if available.
+ */
 static struct job_record* _board_id_to_job_record(char const* board_id);
 
 
@@ -521,7 +546,7 @@ static int _modify_job_desc_compute_job(
 	++job_desc->env_size;
 
 	if (env_array_append_fmt(&job_desc->environment, hagen_daas_config->env_name_scoop_port,
-		"%d", scoop->service->port) != 1)
+		"%d", scoop->port) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
@@ -549,6 +574,8 @@ static int _modify_job_desc_compute_job(
 	}
 	else
 	{
+		// TODO: THere seems to be an error where an already running scoop does
+		// not get detected, investigate!!
 		debug2("[hagen-daas] Scoop is not running yet -> requeue");
 	}
 
@@ -663,7 +690,7 @@ static int _prepare_job(
 		service_t const* service = board_id_to_service(board_id);
 		if (service == NULL )
 		{
-			xfree(scoop);
+			_destroy_running_scoop(scoop);
 			snprintf(
 				function_error_msg, MAX_LENGTH_ERROR,
 				"No service defined for board-id %s!", board_id);
@@ -679,19 +706,24 @@ static int _prepare_job(
 		}
 		else
 		{
-			warn("[hagen-daas] Found no node hosting %s", board_id);
+			info("[hagen-daas] Warning: Found no node hosting %s", board_id);
 		}
 		// TODO DELME stop
 
 		if (node == NULL )
 		{
-			xfree(scoop);
+			_destroy_running_scoop(scoop);
 			snprintf(
 				function_error_msg, MAX_LENGTH_ERROR,
 				"Specified board-id not found!");
 			return HAGEN_DAAS_PLUGIN_FAILURE;
 		}
 
+		// prevent memory leak
+		if (scoop != NULL)
+		{
+			_destroy_running_scoop(scoop);
+		}
 		// build the mock scoop
 		scoop = _build_scoop(board_id, node, service);
 	}
@@ -705,7 +737,7 @@ static int _prepare_job(
 	{
 		// if the scoop is not running we built a temporary placeholder
 		// -> free it
-		xfree(scoop);
+		_destroy_running_scoop(scoop);
 	}
 	return retval;
 }
@@ -768,7 +800,11 @@ static int _ensure_scoop_launched(
 
 		// if the controller was restarted in the meantime our list might not
 		// contain the still running job -> check again
-		_associate_scoop_job_record(scoop);
+		if (_associate_scoop_job_record(scoop) != 0)
+		{
+			error("[hagen-daas] Could not associate scoop to job record.");
+			return HAGEN_DAAS_PLUGIN_FAILURE;
+		}
 
 		// check again
 		if (!_check_scoop_running(scoop))
@@ -791,7 +827,7 @@ static int _ensure_scoop_launched(
 		// relevant if no corresponding job record can be found (short amount of
 		// time after launch)
         scoop->t_start = time(NULL);
-		list_append(running_scoops_l, scoop);
+		_track_scoop(scoop);
 	}
 
 	if (scoop_already_running)
@@ -872,7 +908,7 @@ static int _launch_scoop_in_job_desc(
 	// is set here!!
 	if (env_array_append_fmt(&job_desc->environment,
 							 hagen_daas_config->env_name_scoop_port,
-							 "%d", scoop->service->port) != 1)
+							 "%d", scoop->port) != 1)
 	{
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
@@ -912,6 +948,10 @@ static running_scoop_t* _build_scoop(
 
 	scoop->service = service;
 
+	// find the first port not used by a different scoop on the same machine
+	scoop->port = _find_first_open_port(scoop->ip);
+	debug("[hagen-daas] Lowest port not in use: %d", scoop->port);
+
 	// a built scoop has not started yet -> no start time
 	// will be set in _ensure_scoop_launched
 	scoop->t_start = 0;
@@ -935,6 +975,40 @@ static int _cmp_scoops_by_board_id(void* x, void* key)
 	}
 }
 
+static int _cmp_scoops_by_ip(void* x, void* key)
+{
+	running_scoop_t* scoop = x;
+	char const* ip = key;
+
+	// because everything is defined differently..
+	if (xstrcmp(scoop->ip, ip) == 0)
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+static int _cmp_scoops_by_port(void* x, void* y)
+{
+	running_scoop_t* scoop_x = x;
+	running_scoop_t* scoop_y = y;
+
+	if (scoop_x->port < scoop_y->port)
+	{
+		return -1;
+	}
+	else if (scoop_x->port == scoop_y->port)
+	{
+		return 0;
+	}
+	else {
+		return 1;
+	}
+}
+
 static running_scoop_t* _board_id_to_scoop(char const* board_id)
 {
 	// first method, try to find scoop in list
@@ -943,9 +1017,44 @@ static running_scoop_t* _board_id_to_scoop(char const* board_id)
 
 	if (scoop != NULL)
 	{
-		_associate_scoop_job_record(scoop);
+		if (_associate_scoop_job_record(scoop) != HAGEN_DAAS_PLUGIN_SUCCESS)
+		{
+			error("Could not associate scoop to job record.");
+		}
 	}
 	return scoop;
+}
+
+static int16_t _find_first_open_port(char const* ip)
+{
+	slurm_mutex_lock(&mutex_running_scoops_l);
+	ListIterator itr = list_iterator_create(l_running_scoops);
+
+	int16_t current_port = hagen_daas_config->scoop_port_lowest;
+
+	running_scoop_t* scoop;
+
+	while((scoop = list_find(itr, _cmp_scoops_by_ip, (void*) ip)) != NULL)
+	{
+		// list is sorted in order ascending by port
+		if (scoop->port > current_port)
+		{
+			// all following scoops will have higher port number
+			// -> current_port is free!
+			break;
+		}
+		// the port can't be lower than current_port because we start at
+		// config.scoop_lowest_port (i.e., the lowest available port)
+		xassert(scoop->port == current_port);
+
+		// increase port until we find a free one
+		++current_port;
+	}
+
+	list_iterator_destroy(itr);
+	slurm_mutex_destroy(&mutex_running_scoops_l);
+
+	return current_port;
 }
 
 static bool _job_desc_is_batch_job(job_desc_msg_t* job_desc)
@@ -1075,6 +1184,8 @@ static struct job_record* _board_id_to_job_record(char const* board_id)
 	uint32_t job_uid = pwd->pw_uid;
 	ListIterator itr = list_iterator_create(job_list);
 	struct job_record* job;
+
+	debug("[hagen-daas] Dumping job list..");
 	while ((job = list_next(itr))) {
 		_dump_job_record(job);
 		// we are only interested in jobs run by slurm-daemon itself
@@ -1097,12 +1208,82 @@ static struct job_record* _board_id_to_job_record(char const* board_id)
 }
 
 
-static void _associate_scoop_job_record(running_scoop_t* scoop)
+static int _associate_scoop_job_record(running_scoop_t* scoop)
 {
 	if (scoop->job_record != NULL)
-		return;
+		return HAGEN_DAAS_PLUGIN_SUCCESS;
 
 	scoop->job_record = _board_id_to_job_record(scoop->board_id);
+	if (_sync_port_job_record_to_scoop(scoop) != HAGEN_DAAS_PLUGIN_SUCCESS)
+	{
+		error("[hagen-daas] Could not sync port settings from job record to "
+			  "scoop job!");
+		return HAGEN_DAAS_PLUGIN_FAILURE;
+	}
+	return HAGEN_DAAS_PLUGIN_SUCCESS;
+}
+
+
+static int _sync_port_job_record_to_scoop(running_scoop_t* scoop) {
+	// check if the environment variable starts with env_name_scoop_port
+	// + = (in default settings "QUIGGELY_PORT=")
+	char* buf;
+	size_t buf_size;
+	int16_t port_in_job;
+
+	int retval = HAGEN_DAAS_PLUGIN_SUCCESS;
+
+	if (scoop->job_record == NULL)
+	{
+		// if there is no job there is nothing to do
+		return HAGEN_DAAS_PLUGIN_SUCCESS;
+	}
+	else
+	{
+		// have space for the environment variable name plus the
+		// terminating 0 character that does not get counted by strlen
+        buf_size = strlen(hagen_daas_config->env_name_scoop_port) + 1;
+		buf = xmalloc(buf_size);
+		memset(buf, 0, buf_size);
+
+		uint32_t env_size = 0;
+		char** env = NULL;
+
+		env = get_job_env((struct job_record*) scoop->job_record, &env_size);
+
+		size_t idx;
+		for (idx=0; idx < env_size; ++idx)
+		{
+			debug("[hagen-daas] Job env #%zu: %s", idx, env[idx]);
+
+			if (strlen(env[idx]) <= strlen(hagen_daas_config->env_name_scoop_port) + 1)
+			{
+				continue;
+			}
+
+			strncpy(buf, env[idx], buf_size);
+			if ((xstrcmp(buf, hagen_daas_config->env_name_scoop_port) == 0)
+					&& (env[idx][buf_size-1] == '='))
+			{
+				port_in_job = atoi(env[idx] + buf_size);
+
+				// check if conversion failed
+				if (port_in_job == 0)
+				{
+					error("[hagen-daas] Could not read port from job_record.");
+					retval = HAGEN_DAAS_PLUGIN_SUCCESS;
+				}
+				else
+				{
+					debug("[hagen-daas] Setting old port value %d to %d from job_record.", scoop->port, port_in_job);
+					scoop->port = port_in_job;
+				}
+				break;
+			}
+		}
+		xfree(buf);
+		return retval;
+	}
 }
 
 static void _dump_scoop_list(void)
@@ -1123,8 +1304,8 @@ static void _dump_scoop_list(void)
 		{
 			job_id = scoop->job_record->job_id;
 		}
-		debug("[hagen-daas] Scoop #%zu: %s for %s in job #%d",
-			i, scoop->service->name, scoop->board_id, job_id);
+		debug("[hagen-daas] Scoop #%zu: %s for %s in job #%d on port %d",
+			i, scoop->service->name, scoop->board_id, job_id, scoop->port);
 		++i;
 	}
 	debug("[hagen-daas] Done dumping scoop list contents!");
@@ -1168,5 +1349,18 @@ static bool _job_record_valid(struct job_record const* job)
 {
 	return job != NULL && job->magic == JOB_MAGIC;
 }
+
+static void _destroy_running_scoop(void* ptr)
+{
+	running_scoop_t* cast = ptr;
+	xfree(cast);
+}
+
+static void _track_scoop(running_scoop_t* scoop)
+{
+	list_append(l_running_scoops, scoop);
+	list_sort(l_running_scoops, _cmp_scoops_by_port);
+}
+
 
 // vim: sw=4 ts=4 sts=4 noexpandtab tw=80

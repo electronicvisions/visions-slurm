@@ -32,7 +32,6 @@ typedef struct service
 	char* script_path;
 	char* slurm_account;
 	char* slurm_partition;
-	uint16_t port;
 	uint16_t num_cpus; // how many cpus does the scoop job need
 	uint64_t memory_in_mb;
 	char** board_ids;
@@ -56,6 +55,9 @@ typedef struct hd_config
 	uint32_t num_services;
 
 	// hagen daas defines
+	// first port used by scoops
+	uint16_t scoop_port_lowest;
+
 	// jobname fmt specifier having one string placeholder for the board_id
 	char* scoop_jobname_prefix;
 

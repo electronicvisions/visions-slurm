@@ -225,6 +225,8 @@ int _toml_table_to_hd_config(toml_table_t* root, hd_config_t* cfg)
 	_TOML_READ_STR(env_name_error_msg)
 
 	// hagen daas defines
+	_TOML_READ_INT(scoop_port_lowest)
+
 	// jobname prefix
 	_TOML_READ_STR(scoop_jobname_prefix)
 
@@ -346,7 +348,6 @@ int _toml_read_services(toml_array_t* services, hd_config_t* cfg)
 		_TOML_READ_STR(script_path)
 		_TOML_READ_STR(slurm_account)
 		_TOML_READ_STR(slurm_partition)
-		_TOML_READ_INT(port)
 		_TOML_READ_INT(num_cpus)
 		_TOML_READ_INT(memory_in_mb)
 

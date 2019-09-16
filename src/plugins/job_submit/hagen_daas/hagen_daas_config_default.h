@@ -18,6 +18,9 @@ hd_config_t const hagen_daas_defaults = {
 	.num_services = 0,
 
 	// hagen daas defines
+	// first port used by scoops
+	.scoop_port_lowest = 12321,
+
 	// jobname fmt specifier having one string placeholder for the board_id
 	.scoop_jobname_prefix = "scoop_",
 
