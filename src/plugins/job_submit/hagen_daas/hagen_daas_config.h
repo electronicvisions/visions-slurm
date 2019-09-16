@@ -9,7 +9,7 @@
  * common compile-time defines and constants *
  *********************************************/
 
-#define HAGEN_DAAS_OPT_NAME_LAUNCH_SCOOP "launch_scoop"
+#define HAGEN_DAAS_OPT_NAME_LAUNCH_SCOOP "start-scoop"
 #define HAGEN_DAAS_SPANK_PREFIX "_SLURM_SPANK_OPTION_hagen_daas_"
 
 #define HAGEN_DAAS_PLUGIN_SUCCESS 0

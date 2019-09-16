@@ -359,8 +359,9 @@ extern int job_submit(
 	if ((parsed_options[_option_lookup("daas_board_id")].num_arguments > 0) &&
 			(parsed_options[_option_lookup("launch_scoop")].num_arguments > 0))
 	{
-		snprintf(my_errmsg, max_length_my_error, "job_submit: %s",
-			"Please specify either --daas-board-id or --start-scoop.");
+		snprintf(my_errmsg, max_length_my_error, "job_submit: Please specify "
+				"either --daas-board-id or --%s.",
+				HAGEN_DAAS_OPT_NAME_LAUNCH_SCOOP);
 		retval = SLURM_ERROR;
 		goto CLEANUP;
 	}
@@ -749,7 +750,7 @@ static int _ensure_scoop_launched(
 	{
 		snprintf(
 			function_error_msg, MAX_LENGTH_ERROR,
-			"start-scoop command not supplied via sbatch.");
+			"--%s command not supplied via sbatch.", HAGEN_DAAS_OPT_NAME_LAUNCH_SCOOP);
 		return HAGEN_DAAS_PLUGIN_FAILURE;
 	}
 
