@@ -229,6 +229,7 @@ BEGIN {
 (\$1 ~ /^SINGULARITYENV_/) || (\$1 ~ /^PATH$/) || (\$1 ~ /^LD_LIBRARY_PATH$/) {
   var_name=\$1
   var_value=\$2
+
   if (verbose) {
     printf("echo \"# Escaping for nested singularity environments: %s\"\n", var_name)
   }
@@ -262,12 +263,25 @@ BEGIN {
 }
 
 \$1 ~ /^CLUSTERIZEENV_/ {
+  var_name=\$1
+  var_value=\$2
   if (verbose) {
-    printf("echo \"# Restoring for nested environments: %s\"\n", \$1)
+    printf("echo \"# Restoring for nested environments: %s\"\n", var_name)
   }
-  printf("unset %s\n", \$1)
-  gsub(/^CLUSTERIZEENV_/, "")
-  printf("export %s=\"%s\"\n", \$1, \$2)
+  printf("unset %s\n", var_name)
+  gsub(/^CLUSTERIZEENV_/, "", var_name)
+
+  # LD_LIBRARY_PATH and PATH might have been modified by the container app, so
+  # simply restoring the user environment would erase them.
+  # Solution: prepend the user environment to the container-app environment.
+  if ((var_name ~ /^PATH$/) || (var_name ~ /^LD_LIBRARY_PATH$/)) {
+      gsub(/$/, ":\$" var_name, var_value)
+  }
+
+  printf("export %s=\"%s\"\n", var_name, var_value)
+  if (verbose) {
+    printf("echo \"# export %s=\"%s\"\"\n", var_name, var_value)
+  }
 }
 EOF
   env | awk -F = -f "${FILE_AWK}")
