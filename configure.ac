@@ -95,6 +95,10 @@ AC_CHECK_HEADERS(mcheck.h values.h socket.h sys/socket.h  \
 		)
 AC_HEADER_SYS_WAIT
 
+dnl Check for custom dependencies for visionary-slurm
+AC_CHECK_HEADER(toml.h,                 [], AC_MSG_ERROR([Error: tomlc99 is needed for visionary-slurm plugins!]))
+AC_SEARCH_LIBS([toml_parse],    [toml], [], AC_MSG_ERROR([Error: tomlc99 is needed for visionary-slurm plugins!]))
+
 # Workaround for transition of autoconf/glibc issues in deprecation of the
 # definitions major, minor, makedev by sys/types.h vs sys/sysmacros.h
 old_CFLAGS=$CFLAGS
@@ -502,6 +506,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/job_container/tmpfs/Makefile
 		 src/plugins/job_submit/Makefile
 		 src/plugins/job_submit/all_partitions/Makefile
+		 src/plugins/job_submit/cerberus/Makefile
 		 src/plugins/job_submit/cray_aries/Makefile
 		 src/plugins/job_submit/defaults/Makefile
 		 src/plugins/job_submit/nmpm_custom_resource/Makefile
