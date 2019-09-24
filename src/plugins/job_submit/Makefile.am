@@ -2,6 +2,7 @@
 
 SUBDIRS = \
 	all_partitions \
+	cerberus \
 	cray \
 	defaults \
 	nmpm_custom_resource \
