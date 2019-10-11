@@ -37,6 +37,8 @@ if [ -z "${DEPLOY_ROOT:-}" ]; then
   DEPLOY_ROOT="${CLUSTERIZE_PREFIX}/deployed"
 fi
 
+GIT_REMOTE_DEPLOYMENT="review"
+
 # if file does not exist, it will be generated
 # NOTE: This corresponds to the location INSIDE the container!
 MODULE_FILE_STORE="/run/slurm/current_modules.sh"
@@ -323,4 +325,21 @@ export_slurm_conf() {
     | awk '{ printf("export SLURM_CONF=\"%s/slurm.conf\"\n", $0) }')
   # NOTE: There should only be one export line because only one slurm-*
   # directory is mounted in container!
+}
+
+check_git_branch_modifiable() {
+  local rc
+  # check if we are able to modify branches on the review remote site
+  git push "${GIT_REMOTE_DEPLOYMENT}" -f HEAD:refs/heads/deployed/dummy
+  rc=$?
+  if [ ${rc} -eq 0 ]; then
+    # deleting a branch in gerrit - while succeeding in the git repo - always
+    # returns an internal server error -> ignore
+    git push "${GIT_REMOTE_DEPLOYMENT}" :refs/heads/deployed/dummy
+  fi
+  return ${rc}
+}
+
+get_deployed_branchname() {
+    echo -n "refs/heads/deployed/${CLUSTERIZE_INSTALL_TYPE}"
 }
