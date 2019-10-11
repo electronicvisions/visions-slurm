@@ -9,6 +9,9 @@ SOURCE=$PWD
 SCRIPTNAME="$(realpath -P "$0")"
 PATH_UTILS="$(dirname "${SCRIPTNAME}")"
 SLURM_USER="slurm"
+
+PRODUCTION_INSTALL_TYPE="slurm-skretch"
+
 test -f "${SOURCE}/slurmviz-deployer" || { echo "slurmviz-deployer not found in current directory"; exit 1; }
 test -f "${SOURCE}/AUTHORS" || { echo "We are not in the sluvmiz repository, are we?"; exit 1; }
 
@@ -17,6 +20,10 @@ test -n "$1" || { echo "ERR: Please specify command (inside container: autogen, 
 set -o xtrace
 
 source "${PATH_UTILS}/slurmviz-commons.sh" || { echo "Could not load commons, aborting!"; exit 1; }
+
+has_deployed_branch_tracking() {
+    (( $(git ls-remote --heads "${GIT_REMOTE_DEPLOYMENT}" "$(get_deployed_branchname)" | wc -l) > 0 ))
+}
 
 cmd_autogen() {
   test $UID -eq 0 && { echo "You must NOT be root, channel your inner slurm user instead!"; exit 1; }
@@ -121,6 +128,15 @@ cmd_testlib() {
 cmd_all() {
   systemd_slurm test || { echo -e "Stop slurm prior running this:\n\tsudo systemctl stop slurmdbd slurmd slurmctld"; exit 1; }
 
+  if has_deployed_branch_tracking; then
+      check_git_branch_modifiable || \
+      {
+          echo "Cannot modify remote git repository!" && \
+          echo "This is required to update the production branch correctly after deployment!" && \
+          exit 1
+      } >&2
+  fi
+
   # delete the generated module file to not link against older modules
   local module_file
   module_file="/run/${CLUSTERIZE_INSTALL_TYPE}/$(basename "${MODULE_FILE_STORE}")"
@@ -142,10 +158,21 @@ cmd_all() {
   popd
   ${CMD_SEXEC} $0 deploy_utils
 
+  cmd_update_deployed_branch
+
   echo "" >&2
   echo "Installed slurm, do not forget to start the corresponding services:" >&2
   echo -e "\\tsystemctl start slurm{ctl,db}d@${CLUSTERIZE_INSTALL_TYPE#slurm-}" >&2
   echo "" >&2
+}
+
+cmd_update_deployed_branch() {
+  if has_deployed_branch_tracking; then
+      git push "${GIT_REMOTE_DEPLOYMENT}" -f "HEAD:$(get_deployed_branchname)"
+  else
+      echo "We are not in production environment, should NOT update the branch!" >&2
+      exit 1
+  fi
 }
 
 # run most commands within the container (all except all/deploy_utils)
