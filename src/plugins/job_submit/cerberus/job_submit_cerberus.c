@@ -113,12 +113,10 @@ static bool _check_partition_busy(
 			++count_jobs;
 			if (count_jobs >= partition->num_allowed_jobs_per_user) {
 				*err_msg = xstrdup_printf(
-				    "The partition you have called (i.e., '%s') is temporarily "
-				    "unavailable, please leave a message after the beep (and have "
-				    "less than %d jobs running/scheduled on it) and we will get "
-				    "back to you as soon as possible.",
-				    partition->name, partition->num_allowed_jobs_per_user);
-
+				    "This is Jim. Jim does not schedule more than the allowed %d jobs on partition "
+				    "'%s'. Be more like Jim! Otherwise, your jobs (including this one) will "
+				    "continue to be cancelled.. -> JOB CANCELLED!",
+				    partition->num_allowed_jobs_per_user, partition->name);
 				retval = true;
 				goto cleanup_check_parition;
 			}
