@@ -113,10 +113,8 @@ static bool _check_partition_busy(
 			++count_jobs;
 			if (count_jobs >= partition->num_allowed_jobs_per_user) {
 				*err_msg = xstrdup_printf(
-				    "This is Jim. Jim does not schedule more than the allowed %d jobs on partition "
-				    "'%s'. Be more like Jim! Otherwise, your jobs (including this one) will "
-				    "continue to be cancelled.. -> JOB CANCELLED!",
-				    partition->num_allowed_jobs_per_user, partition->name);
+				    "Partition %s only allows %d concurrently running jobs -> job cancelled",
+				    partition->name, partition->num_allowed_jobs_per_user);
 				retval = true;
 				goto cleanup_check_parition;
 			}
