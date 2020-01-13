@@ -44,4 +44,8 @@ static const char* vision_slurm_powercycle_env_name = "SLURM_POWERCYCLE";
 // Format halco::hicann::v2::slurm_license(FPGAGlobal) e.g.
 // W20F3,W20F8,W20F12
 static const char* vision_slurm_dirty_licenses_env_name = "SLURM_DIRTY_LICENSES";
+
+// Path to directory containing blacklisting information
+static const char* vision_slurm_defects_path_env_name = "SLURM_DEFECTS_PATH";
+
 #pragma GCC diagnostic pop
