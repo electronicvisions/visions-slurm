@@ -102,6 +102,9 @@ struct spank_option my_spank_options[] = {
      "Force the automated initialization of all neighbouring licenses"
      "Cannot be specified together with 'skip-hicann-init'.",
      0, 0, (spank_opt_cb_f)_no_op},
+    {"defects-path", "[path/to/custom/blacklisting]",
+     "Path to directory containing blacklisting information.",
+     1, 0, (spank_opt_cb_f)_check_opt},
     {"powercycle", "",
      "Powercycle the given HW resources. Only available for DLS setups atm.",
      0, 0, (spank_opt_cb_f)_no_op},

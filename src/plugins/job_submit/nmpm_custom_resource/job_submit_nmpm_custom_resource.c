@@ -11,6 +11,7 @@
  *  agreement 720270 (HBP).
 \*****************************************************************************/
 
+#include <dirent.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -82,7 +83,7 @@ typedef struct option_index {
 } option_index_t;
 
 //global array of valid options
-#define NUM_OPTIONS 20
+#define NUM_OPTIONS 21
 // options that are only valid if single wafer option is given
 #define WMOD_DEPENDENT_MIN_INDEX 4
 #define WMOD_DEPENDENT_MAX_INDEX 11
@@ -106,7 +107,8 @@ static const option_index_t custom_res_options[NUM_OPTIONS] = {
 	{ "reticle_of_hicann_without_aout", 11},
 	{ "skip_hicann_init",               12},
 	{ "force_hicann_init",              13},
-	{ "powercycle",                     14}
+	{ "defects_path",                   14},
+	{ "powercycle",                     15}
 };
 
 // global handle of hwdb
@@ -204,6 +206,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	size_t num_allocated_modules = 0; //track number of modules, used as index for allocated_modules
 	char my_errmsg[MAX_ERROR_LENGTH]; //string for temporary error message
 	char* hwdb_path = NULL;
+	char* defects_path = NULL;
 	bool zero_res_args = true;
 	bool wmod_only_hw_option = true;
 	bool skip_master_alloc = false;
@@ -218,6 +221,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	char* slurm_neighbor_hicanns_environment_string = NULL;
 	char* slurm_neighbor_licenses_raw_string = NULL;
 	char* slurm_neighbor_licenses_environment_string = NULL;
+	char* slurm_defects_path_environment_string = NULL;
 	char* slurm_hicann_init_env = NULL; // holds info about automated hicann init
 	char* hicann_environment_string = NULL;
 	char* adc_environment_string = NULL;
@@ -318,6 +322,33 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			goto CLEANUP;
 		}
 		force_hicann_init = true;
+	}
+
+	if (parsed_options[_option_lookup("defects_path")].num_arguments == 1) {
+		defects_path = parsed_options[_option_lookup("defects_path")].arguments[0];
+		DIR* dir = opendir(defects_path);
+		if (dir) {
+		    closedir(dir);
+		} else {
+			switch(errno) {
+				case ENOENT: snprintf(my_errmsg, MAX_ERROR_LENGTH, "Defects path \"%s\" does not exist", parsed_options[_option_lookup("defects_path")].arguments[0]);
+				             retval = SLURM_ERROR;
+				             goto CLEANUP;
+				case EACCES: snprintf(my_errmsg, MAX_ERROR_LENGTH, "Defects path \"%s\" permission denied", parsed_options[_option_lookup("defects_path")].arguments[0]);
+				             retval = SLURM_ERROR;
+				             goto CLEANUP;
+				case ENOTDIR: snprintf(my_errmsg, MAX_ERROR_LENGTH, "Defects path \"%s\" is file", parsed_options[_option_lookup("defects_path")].arguments[0]);
+				              retval = SLURM_ERROR;
+				              goto CLEANUP;
+				default: snprintf(my_errmsg, MAX_ERROR_LENGTH, "Unexpected error while determine if defects path is valid: \"%s\"", parsed_options[_option_lookup("defects_path")].arguments[0]);
+				         retval = SLURM_ERROR;
+				         goto CLEANUP;
+			}
+		}
+	} else if (parsed_options[_option_lookup("defects_path")].num_arguments > 1) {
+		snprintf(my_errmsg, MAX_ERROR_LENGTH, "multiple (%d) defect paths given!", parsed_options[_option_lookup("defects_path")].num_arguments);
+		retval = SLURM_ERROR;
+		goto CLEANUP;
 	}
 
 	if (parsed_options[_option_lookup("powercycle")].num_arguments == 1) {
@@ -576,6 +607,14 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	strcpy(slurm_neighbor_hicanns_environment_string, vision_slurm_neighbor_hicanns_env_name);
 	strcat(slurm_neighbor_hicanns_environment_string, "=");
 
+	slurm_defects_path_environment_string = xmalloc(strlen(vision_slurm_defects_path_env_name) + 2);
+	strcpy(slurm_defects_path_environment_string, vision_slurm_defects_path_env_name);
+	strcat(slurm_defects_path_environment_string, "=");
+	if (defects_path) {
+		slurm_defects_path_environment_string = xrealloc(slurm_defects_path_environment_string, strlen(slurm_defects_path_environment_string) + strlen(defects_path) + 1);
+		strcat(slurm_defects_path_environment_string, defects_path);
+	}
+
 	// add value to HICANN init env var, malloc for largets value, i.e. '=DEFAULT'
 	slurm_hicann_init_env = xmalloc(strlen(vision_slurm_hicann_init_env_name) + (8 + 1));
 	strcpy(slurm_hicann_init_env, vision_slurm_hicann_init_env_name);
@@ -751,7 +790,9 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	// write prolog relevant information into slurm admin comment
 	size_t admin_comment_size = strlen(slurm_neighbor_licenses_environment_string) +
 	                            strlen(slurm_hicann_init_env) +
-	                            strlen(slurm_licenses_environment_string) + 2 /* 2x;*/ + 1;
+	                            strlen(slurm_licenses_environment_string) +
+	                            strlen(slurm_defects_path_environment_string) +
+				    3 /* 3x;*/ + 1;
 	if (job_desc->admin_comment) {
 		admin_comment_size += strlen(job_desc->admin_comment);
 		xrealloc(job_desc->admin_comment, admin_comment_size);
@@ -763,6 +804,8 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	xstrcat(job_desc->admin_comment, slurm_hicann_init_env);
 	xstrcat(job_desc->admin_comment, ";");
 	xstrcat(job_desc->admin_comment, slurm_licenses_environment_string);
+	xstrcat(job_desc->admin_comment, ";");
+	xstrcat(job_desc->admin_comment, slurm_defects_path_environment_string);
 	if(powercycle_info) {
 		xrealloc(job_desc->admin_comment, admin_comment_size + 1 + strlen(powercycle_info));
 		xstrcat(job_desc->admin_comment, ";");
