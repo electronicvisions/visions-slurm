@@ -74,7 +74,7 @@ done
 determine_singularity_app
 
 # backward-compatibility for hel
-if [ "$(hostname)" = "helvetica" ]; then
+if [[ "$(hostname)" == helvetica* ]]; then
     if [[ "$CLUSTERIZE_INSTALL_TYPE" == *-testing ]]; then
         echo "-B /opt/munge-testing/var/run/munge:/run/munge"
     else
