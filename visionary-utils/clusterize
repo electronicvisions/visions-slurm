@@ -4,6 +4,55 @@
 # of the link inside the container
 # Useful for scontrol, srun, sbatch etc...
 
+usage() {
+cat <<EOF >&2
+
+Usage: $(basename "${SCRIPTPATH:-${0}}") [options] ARGS...
+
+Execute the given arguments in a singularity image prepared for slurm to
+operate in.
+
+Options:
+    -h              Print this help.
+
+    -a <app name>   Name of application in which to run the clusterized
+                    process.
+                    If unspecified the app needed for slurm operations to work
+                    will be chosen.
+
+    -c <container>  Path to container image in which to run the clusterized
+                    process.
+                    If unspecified the container image with which slurm was
+                    compiled operations to work will be chosen.
+EOF
+}
+
+# If we are called via `clusterize`, support command line arguments to specify
+# container/app.
+#
+# If we are called via a symlink then all command line arguments are meant for
+# the executable we are wrapping.
+if [ "$(basename "$0")" = "clusterize" ]; then
+    while getopts ":hva:c:" opt
+    do
+      case $opt in
+
+        h )  usage; exit 0   ;;
+
+        v )  CLUSTERIZE_VERBOSE=1 ;;
+
+        a )  CLUSTERIZE_APP="${OPTARG}" ;;
+
+        c )  CLUSTERIZE_CONTAINER="${OPTARG}" ;;
+
+        * )  echo -e "\n  Option does not exist : $OPTARG\n"
+              usage; exit 1   ;;
+
+      esac
+    done
+    shift $(( OPTIND - 1 ))
+fi
+
 if [ "$(basename "$0")" != "clusterize" ] && [ -z "${CLUSTERIZE_SET_UP:+x}" ]; then
   WRAPPED_CMD=("$(basename "$0")" "$@")
 else
@@ -21,13 +70,8 @@ source "$(dirname "${SCRIPTPATH}")/slurmviz-commons.sh" || {
 
 # exit early if no arguments supplied
 if [ ${#WRAPPED_CMD} -eq 0 ]; then
-  cat <<EOF >&2
-
-Usage: $(basename ${SCRIPTPATH}) ARGS...
-
-Execute the given arguments in a singularity image prepared for slurm to
-operate in.
-EOF
+  echo "No command to wrap!" >&2
+  usage
   exit 0
 fi
 
