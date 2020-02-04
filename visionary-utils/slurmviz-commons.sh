@@ -263,6 +263,20 @@ BEGIN {
   if (verbose) {
     printf("echo \"# Escaping for nested singularity environments: %s\"\n", var_name)
   }
+  if (var_name ~ /^PATH$/)
+  {
+    if (verbose) {
+      printf("echo \"# Purging common directories from \$PATH. ")
+      printf("They will be readded by singularity.\"\n")
+    }
+    sub(/(^|:)\\/usr\\/local\\/sbin:?/, "\\1", var_value)
+    sub(/(^|:)\\/usr\\/local\\/bin:?/, "\\1", var_value)
+    sub(/(^|:)\\/usr\\/sbin:?/, "\\1", var_value)
+    sub(/(^|:)\\/usr\\/bin:?/, "\\1", var_value)
+    sub(/(^|:)\\/sbin:?/, "\\1", var_value)
+    sub(/(^|:)\\/bin:?/, "\\1", var_value)
+  }
+
   printf("export SINGULARITYENV_CLUSTERIZEENV_%s=\"%s\"\n", var_name, var_value)
 
   # Don't unset PATH/LD_LIBRARY_PATH here
