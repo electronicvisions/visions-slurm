@@ -43,6 +43,34 @@ GIT_REMOTE_DEPLOYMENT="review"
 # NOTE: This corresponds to the location INSIDE the container!
 MODULE_FILE_STORE="/run/slurm/current_modules.sh"
 
+###############
+# BOOKKEEPING #
+###############
+
+if [[ ! -v _slurmviz_exit_fns[@] ]]; then
+  # bash only supports a single function for the exit trap, so we store all
+  # functions to execute in an array an iterate over it
+  _slurmviz_exit_fns=()
+
+  _slurmviz_exit_trap() {
+    for fn in "${_slurmviz_exit_fns[@]}"; do
+      eval "${fn}"
+    done
+  }
+
+  trap _slurmviz_exit_trap EXIT
+
+  add_cleanup_step() {
+    for fn in "$@"; do
+      _slurmviz_exit_fns+=("${fn}")
+    done
+  }
+fi
+
+################
+# /BOOKKEEPING #
+################
+
 # OJB (03.12.2018 17:56:54):
 # For unknown reasons, autoconf and automake do not appear in the
 # visionary-slurmviz view and hence need to be loaded "manually" prior to
@@ -214,10 +242,9 @@ escape_singularity_env() {
   # This can be disabled (for debugging purposes) via CLUSTERIZE_NO_CLEAN_SENV.
   source <(
   FILE_AWK=$(mktemp)
-  finish() {
-    rm "${FILE_AWK}"
-  }
-  trap finish EXIT
+
+  add_cleanup_step "rm '${FILE_AWK}'"
+
   cat >"${FILE_AWK}" <<EOF
 BEGIN {
   verbose=$([ -n "${CLUSTERIZE_VERBOSE+x}" ] && echo 1 || echo 0)
@@ -256,10 +283,9 @@ restore_singularity_env() {
   # restore_singularity_env inside the container to map back.
   source <(
   FILE_AWK=$(mktemp)
-  finish() {
-    rm "${FILE_AWK}"
-  }
-  trap finish EXIT
+
+  add_cleanup_step "rm '${FILE_AWK}'"
+
   cat >"${FILE_AWK}" <<EOF
 BEGIN {
   verbose=$([ -n "${CLUSTERIZE_VERBOSE+x}" ] && echo 1 || echo 0)
