@@ -91,6 +91,9 @@ get_latest_version() {
   # takes into account compiler version, so if a package is available by two
   # compiler versions, the newer one is taken.
   FILE_AWK=$(mktemp)
+
+  add_cleanup_step "rm '${FILE_AWK}'"
+
   cat >"${FILE_AWK}" <<EOF
 /^--/ {
   # \`spack find\` sorts installed specs by compiler, these lines start with
@@ -107,7 +110,6 @@ get_latest_version() {
 EOF
 
   spack find -v "$1" | awk -f "${FILE_AWK}"| sort -V | tail -n 1
-  rm "${FILE_AWK}"
 }
 
 get_config_opts() {
@@ -240,7 +242,6 @@ escape_singularity_env() {
   # We do not want the current SINGULARITYENV_ variables to clutter the
   # environment of the inner process -> we need to unset them.
   # This can be disabled (for debugging purposes) via CLUSTERIZE_NO_CLEAN_SENV.
-  source <(
   FILE_AWK=$(mktemp)
 
   add_cleanup_step "rm '${FILE_AWK}'"
@@ -285,8 +286,7 @@ BEGIN {
   }
 }
 EOF
-  env | awk -F = -f "${FILE_AWK}"
-  )
+    source <(env | awk -F = -f "${FILE_AWK}")
 }
 
 restore_singularity_env() {
@@ -295,7 +295,6 @@ restore_singularity_env() {
   # to work around:
   # We map SINGULARITYENV_<var> to SINGULARITYENV_CLUSTERIZEENV_<var> and call
   # restore_singularity_env inside the container to map back.
-  source <(
   FILE_AWK=$(mktemp)
 
   add_cleanup_step "rm '${FILE_AWK}'"
@@ -327,7 +326,7 @@ BEGIN {
   }
 }
 EOF
-  env | awk -F = -f "${FILE_AWK}")
+    source <(env | awk -F = -f "${FILE_AWK}")
 }
 
 export_hwdb_env() {
