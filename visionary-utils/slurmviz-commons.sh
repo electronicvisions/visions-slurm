@@ -233,6 +233,19 @@ setup_singularity() {
   source "${SINGULARITY_COMMANDS}" || { echo "Failed sourcing ${SINGULARITY_COMMANDS}" >&2; exit 1; }
 }
 
+# Paths that need to be purged from PATH as they will be appended by singularity.
+# Otherwise binaries in these folders might shadow binaries in app-specific folders.
+#
+# Also purge paths with trailing slashes.
+_purge_from_path=(
+    "/usr/local/sbin/?"
+    "/usr/local/bin/?"
+    "/usr/sbin/?"
+    "/usr/bin/?"
+    "/sbin/?"
+    "/bin/?"
+)
+
 escape_singularity_env() {
   # Because singularity is stupid and does not forward
   # SINGULARITYENV_SINGULARITYENV_LD_LIBRARY_PATH inside the container, we have
@@ -257,6 +270,11 @@ BEGIN {
   }
 }
 
+function purge_path(path) {
+    return gensub(/(^|:)($(IFS='|';
+        echo "${_purge_from_path[*]//\//\\/}"))(:|$)/, "::", "g", path)
+}
+
 (\$1 ~ /^SINGULARITYENV_/) || (\$1 ~ /^PATH$/) || (\$1 ~ /^LD_LIBRARY_PATH$/) {
   var_name=\$1
   var_value=\$2
@@ -267,15 +285,22 @@ BEGIN {
   if (var_name ~ /^PATH$/)
   {
     if (verbose) {
-      printf("echo \"# Purging common directories from \$PATH. ")
-      printf("They will be readded by singularity.\"\n")
+      printf("echo \"# Purging common directories from \$PATH.\n")
+      printf("# They will be re-appended by singularity.\"\n")
     }
-    sub(/(^|:)\\/usr\\/local\\/sbin:?/, "\\1", var_value)
-    sub(/(^|:)\\/usr\\/local\\/bin:?/, "\\1", var_value)
-    sub(/(^|:)\\/usr\\/sbin:?/, "\\1", var_value)
-    sub(/(^|:)\\/usr\\/bin:?/, "\\1", var_value)
-    sub(/(^|:)\\/sbin:?/, "\\1", var_value)
-    sub(/(^|:)\\/bin:?/, "\\1", var_value)
+    # Purge the default folders but leave the colons (they will be removed in a next step)
+    var_value=purge_path(var_value)
+    # Because gawk does not support zero-width lookahead regexes, we need to
+    # perform the substitution twice in order to catch all paths..
+    var_value=purge_path(var_value)
+    # eliminate multiple colons left in place
+    gsub(/::+/, ":", var_value)
+    # strip prefixed and trailing colons
+    gsub(/(^:|:$)/, "", var_value)
+    if (verbose)
+    {
+        printf("echo \"# After purging: %s\"\n", var_value)
+    }
   }
 
   printf("export SINGULARITYENV_CLUSTERIZEENV_%s=\"%s\"\n", var_name, var_value)
