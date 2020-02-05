@@ -13,7 +13,7 @@ SLURM_USER="slurm"
 PRODUCTION_INSTALL_TYPE="slurm-skretch"
 
 test -f "${SOURCE}/slurmviz-deployer" || { echo "slurmviz-deployer not found in current directory"; exit 1; }
-test -f "${SOURCE}/AUTHORS" || { echo "We are not in the sluvmiz repository, are we?"; exit 1; }
+test -f "${SOURCE}/AUTHORS" || { echo "We are not in the slurmviz repository, are we?"; exit 1; }
 
 test -n "$1" || { echo "ERR: Please specify command (inside container: autogen, configure, build, install, deploy_utils, testlib; outside: all)."; exit 1; }
 
