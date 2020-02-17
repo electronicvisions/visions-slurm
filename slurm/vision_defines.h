@@ -1,3 +1,5 @@
+#pragma once
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 // comma separated list (CSL) of all allocated ADC boards,
