@@ -50,4 +50,12 @@ static const char* vision_slurm_dirty_licenses_env_name = "SLURM_DIRTY_LICENSES"
 // Path to directory containing blacklisting information
 static const char* vision_slurm_defects_path_env_name = "SLURM_DEFECTS_PATH";
 
+// Environmental names for quiggeldy
+// Whether or not the fisch playback executor should use quiggeldy in auto mode
+static char const* const vision_quiggeldy_enabled_env_name = "QUIGGELDY_ENABLED";
+// IP/port to which the client should connectl/the server should bind
+static char const* const vision_quiggeldy_ip_env_name = "QUIGGELDY_IP";
+static char const* const vision_quiggeldy_port_env_name = "QUIGGELDY_PORT";
+static char const* const vision_quiggeldy_partition = "QUIGGELDY_PARTITION";
+
 #pragma GCC diagnostic pop
