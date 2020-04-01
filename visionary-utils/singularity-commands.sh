@@ -33,8 +33,6 @@ determine_singularity_app() {
     # container based apps and singularity (e.g., meta-nmpm-software).
     if [ -n "${CLUSTERIZE_APP:-}" ]; then
         echo "--app ${CLUSTERIZE_APP}"
-    elif [ "$(hostname)" = "slurmviz" ]; then
-        echo "--app visionary-wafer"
     fi
 }
 

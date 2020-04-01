@@ -41,9 +41,12 @@ cmd_configure() {
     export_hwdb_env
     setup_compile_dependencies
 
-    export_spack_view visionary-wafer
     export_spack_view visionary-slurmviz
 
+    local config_opts
+    config_opts="$(get_config_opts)"
+
+    echo "Configuring with: ${config_opts}" >&2
     ./configure $(get_config_opts) || exit $?
   popd
 }
@@ -57,7 +60,6 @@ cmd_build() {
     export_hwdb_env
     setup_compile_dependencies
 
-    export_spack_view visionary-wafer
     export_spack_view visionary-slurmviz
 
     make -j $(nproc) || exit $?
