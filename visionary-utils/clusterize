@@ -23,7 +23,7 @@ Options:
     -c <container>  Path to container image in which to run the clusterized
                     process.
                     If unspecified the container image with which slurm was
-                    compiled operations to work will be chosen.
+                    compiled will be chosen.
 EOF
 }
 
