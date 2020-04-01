@@ -8,6 +8,8 @@
 
 set -euo pipefail
 
+REPO_DB_URL=https://github.com/electronicvisions/projects
+
 # Get the directory the symlink is in.
 # -s: do not resolve symlinks
 PATH_HWDB="$(dirname "$(realpath -s "$0")")"
@@ -43,8 +45,8 @@ popd
 [ -f ./waf ] && rm -v ./waf
 cp -v waf-repo/waf .
 
-${CMD} ./waf setup --project=hwdb
-${CMD} ./waf repos-update --repo-db-url=https://github.com/electronicvisions/projects
+${CMD} ./waf setup --project=hwdb --repo-db-url=${REPO_DB_URL}
+${CMD} ./waf repos-update --repo-db-url=${REPO_DB_URL}
 export CFLAGS_PREPEND='-D_FORTIFY_SOURCE=1 -fstack-protector-strong'
 export CXXFLAGS_PREPEND='-D_FORTIFY_SOURCE=1 -fstack-protector-strong'
 
