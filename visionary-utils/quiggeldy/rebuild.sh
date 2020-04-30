@@ -27,12 +27,12 @@ pushd "${PATH_QUIGGELDY}"
 
 CMD="singularity exec -B "${PATH_QUIGGELDY}" \
                       -B "${PATH_INSTALL}" \
-                      -a visionary-dls \
+                      -a dls-core \
                       ${PATH_CONTAINER}"
 
 rpaths=(
   "${PATH_INSTALL}/lib"
-  "/opt/spack_views/visionary-dls/lib"
+  "/opt/spack_views/visionary-dls-core/lib"
 )
 
 # prepend all rpaths with '-rpath' and join by commas
