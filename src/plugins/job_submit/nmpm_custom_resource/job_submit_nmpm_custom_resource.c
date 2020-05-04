@@ -720,8 +720,8 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			for (ananascounter = 0; ananascounter < NUM_ANANAS_PER_WAFER; ananascounter++) {
 				if (allocated_modules[modulecounter].active_ananas[ananascounter]) {
 					size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_ANANAS_PER_WAFER + ananascounter;
-					if( _append_slurm_license(global_id, hwdb4c_ANANASGlobal_slurm_license, slurm_licenses_string) != NMPM_PLUGIN_SUCCESS) {
-						snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for ANANAS %lu failed", global_id);
+					if( _append_slurm_license(global_id, hwdb4c_AnanasGlobal_slurm_license, slurm_licenses_string) != NMPM_PLUGIN_SUCCESS) {
+						snprintf(my_errmsg, MAX_ERROR_LENGTH, "Creating slurm license for Ananas %lu failed", global_id);
 						retval = SLURM_ERROR;
 						goto CLEANUP;
 					}
@@ -1250,13 +1250,13 @@ static int _add_ananas(size_t fpga_id, wafer_res_t *allocated_module)
 		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion FPGAOnWafer %zu to TriggerOnWafer failed", fpga_id);
 		return NMPM_PLUGIN_FAILURE;
 	}
-	if (hwdb4c_TriggerOnWafer_toANANASOnWafer(trigger_id, &ananas_id) != HWDB4C_SUCCESS) {
-		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion TriggerOnWafer %zu to ANANASOnWafer failed", trigger_id);
+	if (hwdb4c_TriggerOnWafer_toAnanasOnWafer(trigger_id, &ananas_id) != HWDB4C_SUCCESS) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion TriggerOnWafer %zu to AnanasOnWafer failed", trigger_id);
 		return NMPM_PLUGIN_FAILURE;
 	}
 	size_t global_ananas_id = allocated_module->wafer_id * NUM_ANANAS_PER_WAFER + ananas_id;
 	if (hwdb4c_has_ananas_entry(hwdb_handle, global_ananas_id, &has_ananas) != HWDB4C_SUCCESS) {
-		snprintf(function_error_msg, MAX_ERROR_LENGTH, "HWDB lookup of ANANASGlobal %zu failed", global_ananas_id);
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "HWDB lookup of AnanasGlobal %zu failed", global_ananas_id);
 		return NMPM_PLUGIN_FAILURE;
 	}
 	if (has_ananas) {
