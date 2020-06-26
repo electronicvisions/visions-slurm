@@ -83,7 +83,7 @@ typedef struct option_index {
 } option_index_t;
 
 //global array of valid options
-#define NUM_OPTIONS 21
+#define NUM_OPTIONS 20
 // options that are only valid if single wafer option is given
 #define WMOD_DEPENDENT_MIN_INDEX 4
 #define WMOD_DEPENDENT_MAX_INDEX 11
@@ -107,8 +107,7 @@ static const option_index_t custom_res_options[NUM_OPTIONS] = {
 	{ "reticle_of_hicann_without_aout", 11},
 	{ "skip_hicann_init",               12},
 	{ "force_hicann_init",              13},
-	{ "defects_path",                   14},
-	{ "powercycle",                     15}
+	{ "defects_path",                   14}
 };
 
 // global handle of hwdb
@@ -182,9 +181,6 @@ static int _add_neighbors(size_t hicann_id, wafer_res_t *allocated_module);
  * if the neighboring hicann itself is not active. Same is done for the corresponding FPGA */
 static int _allocate_neighbor(size_t hicann_id, wafer_res_t *allocated_module, int (*get_neighbor)(size_t, size_t*));
 
-/* Extract information for powercycle script in prolog script. */
-static int _get_powercycle_info(struct job_descriptor *job_desc, char **info);
-
 /* Convert give id with provided to_slurm_license conversion function to license string and append to env_string. */
 static int _append_slurm_license(size_t id, int (*to_slurm_license)(size_t, char**), char *env_string);
 
@@ -213,7 +209,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	bool without_trigger = false;
 	bool skip_hicann_init = false;
 	bool force_hicann_init = false;
-	bool powercycle = false;
 	size_t counter;
 	size_t modulecounter;
 	char* slurm_licenses_string = NULL;
@@ -349,15 +344,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		snprintf(my_errmsg, MAX_ERROR_LENGTH, "multiple (%d) defect paths given!", parsed_options[_option_lookup("defects_path")].num_arguments);
 		retval = SLURM_ERROR;
 		goto CLEANUP;
-	}
-
-	if (parsed_options[_option_lookup("powercycle")].num_arguments == 1) {
-		if (strcmp(parsed_options[_option_lookup("powercycle")].arguments[0], NMPM_MAGIC_BINARY_OPTION) != 0) {
-			snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid magic powercycle argument %s", parsed_options[_option_lookup("powercycle")].arguments[0]);
-			retval = SLURM_ERROR;
-			goto CLEANUP;
-		}
-		powercycle = true;
 	}
 
 	// make sure that only one of force-hicann-init or skip-hicann-init options is passed
@@ -778,14 +764,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	} else {
 		job_desc->licenses = xstrdup(slurm_licenses_string);
 	}
-	char* powercycle_info = NULL;
-	if(powercycle) {
-		if (_get_powercycle_info(job_desc, &powercycle_info) != NMPM_PLUGIN_SUCCESS) {
-			snprintf(my_errmsg, MAX_ERROR_LENGTH, "_get_powercycle_info: %s", function_error_msg);
-			retval = SLURM_ERROR;
-			goto CLEANUP;
-		}
-	}
 
 	// write prolog relevant information into slurm admin comment
 	size_t admin_comment_size = strlen(slurm_neighbor_licenses_environment_string) +
@@ -806,11 +784,6 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	xstrcat(job_desc->admin_comment, slurm_licenses_environment_string);
 	xstrcat(job_desc->admin_comment, ";");
 	xstrcat(job_desc->admin_comment, slurm_defects_path_environment_string);
-	if(powercycle_info) {
-		xrealloc(job_desc->admin_comment, admin_comment_size + 1 + strlen(powercycle_info));
-		xstrcat(job_desc->admin_comment, ";");
-		xstrcat(job_desc->admin_comment, powercycle_info);
-	}
 
 	info("LICENSES: %s", job_desc->licenses);
 	retval = SLURM_SUCCESS;
@@ -848,10 +821,6 @@ CLEANUP:
 	if (adc_environment_string) {
 		xfree(adc_environment_string);
 		adc_environment_string = NULL;
-	}
-	if (powercycle_info) {
-		xfree(powercycle_info);
-		powercycle_info = NULL;
 	}
 	if (hwdb_handle) {
 		hwdb4c_free_hwdb(hwdb_handle);
@@ -1315,50 +1284,6 @@ static int _allocate_neighbor(size_t hicann_id,
 		}
 		if (!allocated_module->active_fpgas[fpga_id]) {
 			allocated_module->active_fpga_neighbor[fpga_id] = true;
-		}
-	}
-	return NMPM_PLUGIN_SUCCESS;
-}
-
-static int _get_powercycle_info(struct job_descriptor *job_desc, char **return_info)
-{
-	if (*return_info) {
-		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Given pointer non-null");
-		return NMPM_PLUGIN_FAILURE;
-	}
-	if (!job_desc->gres) {
-		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Powercycle requested but no gres given");
-		return NMPM_PLUGIN_FAILURE;
-	}
-
-	// overall goal is to get ip and slot of network poweroutlet
-	// * get all dls setups
-	// * search gres in list of dls setups
-	// * if exists extract information and write into char
-	char** dls_setup_ids = NULL;
-	size_t dls_setup_ids_size;
-	size_t i;
-	if (hwdb4c_get_dls_setup_ids(hwdb_handle, &dls_setup_ids, &dls_setup_ids_size) != HWDB4C_SUCCESS) {
-		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Could not get DLS setup IDs");
-		return NMPM_PLUGIN_FAILURE;
-	}
-	for (i = 0; i < dls_setup_ids_size; i++) {
-		if (strstr(dls_setup_ids[i], job_desc->gres)) {
-			struct hwdb4c_dls_setup_entry *dls;
-			if( hwdb4c_get_dls_entry(hwdb_handle, dls_setup_ids[i], &dls) != HWDB4C_SUCCESS) {
-				snprintf(function_error_msg, MAX_ERROR_LENGTH, "Failed to aquire DLS setup entry %s", dls_setup_ids[i]);
-				return NMPM_PLUGIN_FAILURE;
-			}
-			if(strcmp(dls->ntpwr_ip, " ") == 0) {
-				snprintf(function_error_msg, MAX_ERROR_LENGTH, "Setup %s cannot be powercycled via ethernet", dls_setup_ids[i]);
-				return NMPM_PLUGIN_FAILURE;
-			}
-			*return_info = xmalloc(strlen(vision_slurm_powercycle_env_name) +
-			                       strlen(dls->ntpwr_ip) +
-			                       2 /*, and '\0'*/ +
-			                       21 /*ntpwr_slot is size_t so max 21 chars to represent number*/);
-			sprintf(*return_info, "%s%s,%lu", vision_slurm_powercycle_env_name, dls->ntpwr_ip, dls->ntpwr_slot);
-			hwdb4c_free_dls_setup_entry(dls);
 		}
 	}
 	return NMPM_PLUGIN_SUCCESS;

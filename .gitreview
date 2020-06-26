@@ -2,6 +2,6 @@
 host=gerrit.bioai.eu
 port=29418
 project=visions-slurm
-defaultbranch=visions-slurm-17.11
+defaultbranch=visions-slurm-20.02.3
 defaultremote=review
 defaultrebase=0

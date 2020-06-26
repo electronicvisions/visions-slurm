@@ -30,7 +30,8 @@ cmd_autogen() {
 
   pushd ${SOURCE}
     setup_compile_dependencies
-    ./autogen.sh || exit $?
+    autoconf
+    autoreconf
   popd
 }
 
