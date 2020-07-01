@@ -61,6 +61,7 @@ $(add_if_exists /run/nscd)
 $(add_if_exists "/var/lib/${CLUSTERIZE_INSTALL_TYPE}" /var/lib/slurm)
 $(add_if_exists "/var/log/${CLUSTERIZE_INSTALL_TYPE}" /var/log/slurm)
 $(add_if_exists "/run/${CLUSTERIZE_INSTALL_TYPE}" /run/slurm)
+$(add_if_exists /run/xtables.lock)
 -B /sys/fs/cgroup:/opt/cgroup
 -B /etc/group
 EOF
