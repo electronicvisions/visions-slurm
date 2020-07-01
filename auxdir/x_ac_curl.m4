@@ -269,7 +269,7 @@ if (x) {;}
      ifelse([$3],,:,[$3])
   fi
 
-  AM_CONDITIONAL(WITH_CURL, test x$_libcurl_with = xyes && test x$libcurl_cv_lib_curl_usable = xyes)
+  AM_CONDITIONAL(WITH_CURL, test x$_libcurl_with != xno && test x$libcurl_cv_lib_curl_usable = xyes)
 
   unset _libcurl_with
 ])dnl
