@@ -20,8 +20,8 @@ add_if_exists() {
     # Add `source` to container under `target` (if specified).
     # If `source` does not exist, try adding `alternative` (if it exists)
     # NOTE: add_if_exists omits the newline to allow for mount options!
-    [ -d "$1" ] && echo -n "-B $1" && [ -n "$2" ] && echo -n ":$2"
-    [ ! -d "$1" ] && [ -d "$3" ] \
+    [ -e "$1" ] && echo -n "-B $1" && [ -n "$2" ] && echo -n ":$2"
+    [ ! -e "$1" ] && [ -e "$3" ] \
         && echo -n "-B $3" && [ -n "$2" ] && echo -n ":$2"
 }
 
