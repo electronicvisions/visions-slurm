@@ -763,7 +763,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		adc_environment_string[strlen(adc_environment_string) - 1] = '\0';
 	}
 
-	xrealloc(job_desc->environment, sizeof(char *) * (job_desc->env_size + 6));
+	xrealloc(job_desc->environment, sizeof(char *) * (job_desc->env_size + 7));
 	job_desc->environment[job_desc->env_size] = xstrdup(hicann_environment_string);
 	job_desc->environment[job_desc->env_size + 1] = xstrdup(adc_environment_string);
 	job_desc->environment[job_desc->env_size + 2] = xstrdup(slurm_licenses_environment_string);
