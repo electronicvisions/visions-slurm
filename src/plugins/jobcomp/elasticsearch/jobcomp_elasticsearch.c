@@ -813,6 +813,12 @@ extern int slurm_jobcomp_log_record(job_record_t *job_ptr)
 		xfree(str);
 	}
 
+	if (job_ptr->licenses && job_ptr->licenses[0]) {
+		char *str = _json_escape(job_ptr->licenses);
+		xstrfmtcat(json_str, ",\"licenses\":\"%s\"", str);
+		xfree(str);
+	}
+
 	if (job_ptr->gres_alloc && job_ptr->gres_alloc[0]) {
 		char *str = _json_escape(job_ptr->gres_alloc);
 		xstrfmtcat(json_str, ",\"gres_alloc\":\"%s\"", str);
