@@ -718,6 +718,10 @@ extern int jobcomp_p_log_record(job_record_t *job_ptr)
 				job_ptr->tres_fmt_alloc_str);
 	}
 
+	if (job_ptr->licenses && job_ptr->licenses[0]) {
+		data_set_string(data_key_set(record, "licenses"), job_ptr->licenses);
+	}
+
 	if (job_ptr->account && job_ptr->account[0]) {
 		data_set_string(data_key_set(record, "account"),
 				job_ptr->account);
