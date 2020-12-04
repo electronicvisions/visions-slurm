@@ -42,6 +42,9 @@ static const char* vision_slurm_neighbor_licenses_env_name = "SLURM_NEIGHBOR_LIC
 // 192.168.152.34,3
 static const char* vision_slurm_powercycle_env_name = "SLURM_POWERCYCLE";
 
+// string of YAML entries from hwdb of allocated resources
+static const char* vision_slurm_hwdb_yaml_env_name = "SLURM_HWDB_YAML";
+
 // subset of vision_slurm_hardware_licenses_env_name where licenses where marked as dirty prior to job execution
 // Format halco::hicann::v2::slurm_license(FPGAGlobal) e.g.
 // W20F3,W20F8,W20F12
