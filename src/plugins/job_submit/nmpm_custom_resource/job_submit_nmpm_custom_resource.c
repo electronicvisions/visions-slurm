@@ -219,6 +219,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	char* slurm_defects_path_environment_string = NULL;
 	char* slurm_hicann_init_env = NULL; // holds info about automated hicann init
 	char* hicann_environment_string = NULL;
+	char* hwdb_yaml_environment_string = NULL;
 	char* adc_environment_string = NULL;
 	int retval = SLURM_ERROR;
 
@@ -585,6 +586,10 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	slurm_neighbor_licenses_raw_string = xmalloc(num_allocated_modules * MAX_LICENSE_STRING_LENGTH_PER_WAFER + 1);
 	strcpy(slurm_neighbor_licenses_raw_string, "");
 
+	hwdb_yaml_environment_string = xmalloc(strlen(vision_slurm_hwdb_yaml_env_name) + 2);
+	strcpy(hwdb_yaml_environment_string, vision_slurm_hwdb_yaml_env_name);
+	strcat(hwdb_yaml_environment_string, "=");
+
 	slurm_neighbor_licenses_environment_string = xmalloc(num_allocated_modules * MAX_HICANN_ENV_LENGTH_PER_WAFER + strlen(vision_slurm_neighbor_licenses_env_name) + 2);
 	strcpy(slurm_neighbor_licenses_environment_string, vision_slurm_neighbor_licenses_env_name);
 	strcat(slurm_neighbor_licenses_environment_string, "=");
@@ -621,7 +626,15 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		size_t hicanncounter = 0;
 		size_t triggercounter = 0;
 		size_t ananascounter = 0;
-
+		size_t const hx_cube_id_min = 60;
+		if (allocated_modules[modulecounter].wafer_id >= hx_cube_id_min) {
+			char id_str[50];
+			sprintf(id_str, "%ld", allocated_modules[modulecounter].wafer_id - hx_cube_id_min);
+			char* yaml_string = hwdb4c_get_yaml_entries(hwdb_path, "hxcube_id", id_str);
+			xrealloc(hwdb_yaml_environment_string, strlen(hwdb_yaml_environment_string) +  strlen(yaml_string) + 1);
+			strcat(hwdb_yaml_environment_string, yaml_string);
+			free(yaml_string);
+		}
 		for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
 			if (allocated_modules[modulecounter].active_hicanns[hicanncounter]) {
 				size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter;
@@ -749,14 +762,16 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		adc_environment_string[strlen(adc_environment_string) - 1] = '\0';
 	}
 
-	xrealloc(job_desc->environment, sizeof(char *) * (job_desc->env_size + 7));
+	xrealloc(job_desc->environment, sizeof(char *) * (job_desc->env_size + 8));
 	job_desc->environment[job_desc->env_size] = xstrdup(hicann_environment_string);
 	job_desc->environment[job_desc->env_size + 1] = xstrdup(adc_environment_string);
 	job_desc->environment[job_desc->env_size + 2] = xstrdup(slurm_licenses_environment_string);
 	job_desc->environment[job_desc->env_size + 3] = xstrdup(slurm_neighbor_licenses_environment_string);
 	job_desc->environment[job_desc->env_size + 4] = xstrdup(slurm_hicann_init_env);
 	job_desc->environment[job_desc->env_size + 5] = xstrdup(slurm_neighbor_hicanns_environment_string);
-	job_desc->env_size += 6;
+	job_desc->environment[job_desc->env_size + 6] = xstrdup(hwdb_yaml_environment_string);
+	job_desc->env_size += 7;
+
 	//set slurm licenses (including neighbor licenses, those will be removed in prolog script)
 	if(job_desc->licenses) {
 		xrealloc(job_desc->licenses,strlen(slurm_licenses_string) + strlen(job_desc->licenses) + 1);
@@ -808,6 +823,10 @@ CLEANUP:
 	}
 	if (slurm_neighbor_licenses_raw_string) {
 		xfree(slurm_neighbor_licenses_raw_string);
+	}
+	if (hwdb_yaml_environment_string) {
+		xfree(hwdb_yaml_environment_string);
+		hwdb_yaml_environment_string = NULL;
 	}
 	if (slurm_neighbor_licenses_environment_string) {
 		xfree(slurm_neighbor_licenses_environment_string);
