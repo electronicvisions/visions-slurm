@@ -149,7 +149,7 @@ static int _split_aout_arg(char const* arg, size_t* value, int* aout);
 
 /* checks if FPGA is in hwdb and sets FPGA active in wafer_res_t
  * gets all HICANNs of fpga and sets also active
- * if aout is > -1 _add_adc will be called */
+ * if aout is > -1 _add_analog will be called */
 static int _add_fpga(size_t fpga_id, int aout, wafer_res_t* allocated_module);
 
 /* converts Reticle to fpga and calls _add_fpga */
@@ -160,18 +160,16 @@ static int _add_fpga_of_hicann(size_t hicann_id, int aout, wafer_res_t* allocate
 
 /* checks if HICANN is in hwdb and sets HICANN active in wafer_res_t
  * also sets corresponding fpga active
- * if aout is > -1 _add_adc will be called */
+ * if aout is > -1 _add_analog will be called */
 static int _add_hicann(size_t hicann_id, int aout, wafer_res_t* allocated_module);
 
-/* checks if fpga and adc are in hwdb and adds ADC serial number to requested ADCs
- * valid aout values are 0/1 to get one of the two corresponding ADCs or 2 for both */
-static int _add_adc(size_t fpga_id, int aout, wafer_res_t* allocated_module);
+/* checks if FPGA and either ADC based or ananas based readout are in hwdb and adds licenses accordingly
+ * valid aout values are 0/1 to get one of the two corresponding ADCs or 2 for both
+ * in case of ananas aout is ignored*/
+static int _add_analog(size_t fpga_id, int aout, wafer_res_t* allocated_module);
 
 /* adds requested trigger group of corresponding fpga */
 static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module);
-
-/* sets ananas of corresponding fpga active for allocated_module */
-static int _add_ananas(size_t fpga_id, wafer_res_t *allocated_module);
 
 /* Check if neighboring HICANNs exist and set those as active_hicann_neighbors
  * except if they are already active HICANNs. Same is done for corresponding FPGAs */
@@ -542,18 +540,40 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 						retval = ESLURM_INVALID_LICENSES;
 						goto CLEANUP;
 					}
-					// get combination of ADCS
-					if (has_adc0_entry) {
-						if (has_adc1_entry) {
-							aout = 2;
-						} else {
-							aout = 0;
-						}
+					size_t trigger_id = 0;
+					size_t ananas_id = 0;
+					bool has_ananas = false;
+
+					if (hwdb4c_FPGAOnWafer_toTriggerOnWafer(fpgacounter, &trigger_id) != HWDB4C_SUCCESS) {
+						snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion FPGAOnWafer %zu to TriggerOnWafer failed", fpgacounter);
+						return NMPM_PLUGIN_FAILURE;
+					}
+					if (hwdb4c_TriggerOnWafer_toAnanasOnWafer(trigger_id, &ananas_id) != HWDB4C_SUCCESS) {
+						snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion TriggerOnWafer %zu to AnanasOnWafer failed", trigger_id);
+						return NMPM_PLUGIN_FAILURE;
+					}
+					size_t global_ananas_id = allocated_modules[modulecounter].wafer_id * NUM_ANANAS_PER_WAFER + ananas_id;
+					if (hwdb4c_has_ananas_entry(hwdb_handle, global_ananas_id, &has_ananas) != HWDB4C_SUCCESS) {
+						snprintf(function_error_msg, MAX_ERROR_LENGTH, "HWDB lookup of AnanasGlobal %zu failed", global_ananas_id);
+						return NMPM_PLUGIN_FAILURE;
+					}
+
+					if (has_ananas) {
+						aout = 0; // for anans exact value not relevant, only needs to be != -1
 					} else {
-						if (has_adc1_entry) {
-							aout = 1;
+						// get combination of ADCS
+						if (has_adc0_entry) {
+							if (has_adc1_entry) {
+								aout = 2;
+							} else {
+								aout = 0;
+							}
 						} else {
-							aout = -1;
+							if (has_adc1_entry) {
+								aout = 1;
+							} else {
+								aout = -1;
+							}
 						}
 					}
 					if (_add_fpga(fpgacounter, aout, &allocated_modules[modulecounter]) != NMPM_PLUGIN_SUCCESS) {
@@ -1092,12 +1112,9 @@ static int _add_fpga(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 
 	allocated_module->active_fpgas[fpga_id] = true;
 	if (aout > -1) {
-		if (_add_adc(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS) {
+		if (_add_analog(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
 		}
-	}
-	if (_add_ananas(fpga_id, allocated_module) != NMPM_PLUGIN_SUCCESS) {
-		return NMPM_PLUGIN_FAILURE;
 	}
 	return NMPM_PLUGIN_SUCCESS;
 }
@@ -1131,19 +1148,19 @@ static int _add_hicann(size_t hicann_id, int aout, wafer_res_t *allocated_module
 	allocated_module->active_hicanns[hicann_id] = true;
 	allocated_module->active_fpgas[fpga_id] = true;
 	if (aout > -1) {
-		if (_add_adc(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS) {
+		if (_add_analog(fpga_id, aout, allocated_module) != NMPM_PLUGIN_SUCCESS) {
 			return NMPM_PLUGIN_FAILURE;
 		}
-	}
-	if (_add_ananas(fpga_id, allocated_module) != NMPM_PLUGIN_SUCCESS) {
-		return NMPM_PLUGIN_FAILURE;
 	}
 	return NMPM_PLUGIN_SUCCESS;
 
 }
 
-static int _add_adc(size_t fpga_id, int aout, wafer_res_t *allocated_module)
+static int _add_analog(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 {
+	/* First check if ananas available then check for ADC entries.
+	 * if either present lastly add trigger group else fail.
+	 */
 	char adc_license[MAX_ADC_COORD_LENGTH];
 	size_t adccounter;
 	size_t aoutcounter;
@@ -1153,87 +1170,10 @@ static int _add_adc(size_t fpga_id, int aout, wafer_res_t *allocated_module)
 	size_t global_fpga_id = allocated_module->wafer_id * NUM_FPGAS_ON_WAFER + fpga_id;
 	bool has_adc_entry;
 	int retval = NMPM_PLUGIN_SUCCESS;
-
-	switch(aout) {
-		case ONLY_AOUT0:
-			aoutbegin = 0;
-			aoutend = 1;
-			break;
-		case ONLY_AOUT1:
-			aoutbegin = 1;
-			aoutend = 2;
-			break;
-		case BOTH_AOUT:
-			aoutbegin = 0;
-			aoutend = 2;
-			break;
-		default:
-			snprintf(function_error_msg, MAX_ERROR_LENGTH, "AnalogOnHICANN %d out of range", aout);
-			return NMPM_PLUGIN_FAILURE;
-	}
-
-	for (aoutcounter = aoutbegin; aoutcounter < aoutend; aoutcounter++) {
-		if (hwdb4c_has_adc_entry(hwdb_handle, global_fpga_id, aoutcounter, &has_adc_entry) != HWDB4C_SUCCESS && !has_adc_entry) {
-			snprintf(function_error_msg, MAX_ERROR_LENGTH, "ADC Entry (FPGAGlobal %zu, AnalogOnHICANN %zu) not in HWDB", global_fpga_id, aoutcounter);
-			retval = NMPM_PLUGIN_FAILURE;
-			goto ADD_ADC_CLEANUP;
-		}
-		if (hwdb4c_get_adc_entry(hwdb_handle, global_fpga_id, aoutcounter, &adc_entry) != HWDB4C_SUCCESS) {
-			snprintf(function_error_msg, MAX_ERROR_LENGTH, "get ADC Entry (FPGAGlobal %zu, AnalogOnHICANN %zu) failed", global_fpga_id, aoutcounter);
-			retval = NMPM_PLUGIN_FAILURE;
-			goto ADD_ADC_CLEANUP;
-		}
-		if (_add_trigger(fpga_id, allocated_module) != NMPM_PLUGIN_SUCCESS) {
-			snprintf(function_error_msg, MAX_ERROR_LENGTH, "failed to request trigger for (Wmod %zu)", allocated_module->wafer_id);
-			retval = NMPM_PLUGIN_FAILURE;
-			goto ADD_ADC_CLEANUP;
-		}
-		strncpy(adc_license, adc_entry->coord, MAX_ADC_COORD_LENGTH);
-		// check if license is already requested
-		for (adccounter = 0; adccounter < allocated_module->num_active_adcs; adccounter++) {
-			if (strcmp(adc_license, allocated_module->active_adcs[adccounter]) == 0) {
-				//license already in list of to be requested licenses
-				goto ADD_ADC_CLEANUP;
-			}
-		}
-		// check if requesting to many adcs
-		if (allocated_module->num_active_adcs + 1 > MAX_ADCS_PER_WAFER) {
-			snprintf(function_error_msg, MAX_ERROR_LENGTH, "Requesting more ADC licenses than available on one module (Wmod %zu)", allocated_module->wafer_id);
-			retval = NMPM_PLUGIN_FAILURE;
-			goto ADD_ADC_CLEANUP;
-		}
-		strcpy(allocated_module->active_adcs[allocated_module->num_active_adcs], adc_license);
-		allocated_module->num_active_adcs++;
-
-ADD_ADC_CLEANUP:
-		if(adc_entry) {
-			hwdb4c_free_adc_entry(adc_entry);
-			adc_entry = NULL;
-		}
-		if (retval == NMPM_PLUGIN_FAILURE) {
-			break;
-		}
-	}
-
-	return retval;
-}
-
-static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module)
-{
-	size_t trigger_id = 0;
-	if (hwdb4c_FPGAOnWafer_toTriggerOnWafer(fpga_id, &trigger_id) != HWDB4C_SUCCESS) {
-		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion FPGAOnWafer %zu to TriggerOnWafer failed", fpga_id);
-		return NMPM_PLUGIN_FAILURE;
-	}
-	allocated_module->active_trigger[trigger_id] = true;
-	return NMPM_PLUGIN_SUCCESS;
-}
-
-static int _add_ananas(size_t fpga_id, wafer_res_t *allocated_module)
-{
 	size_t trigger_id = 0;
 	size_t ananas_id = 0;
 	bool has_ananas = false;
+
 	if (hwdb4c_FPGAOnWafer_toTriggerOnWafer(fpga_id, &trigger_id) != HWDB4C_SUCCESS) {
 		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion FPGAOnWafer %zu to TriggerOnWafer failed", fpga_id);
 		return NMPM_PLUGIN_FAILURE;
@@ -1247,9 +1187,84 @@ static int _add_ananas(size_t fpga_id, wafer_res_t *allocated_module)
 		snprintf(function_error_msg, MAX_ERROR_LENGTH, "HWDB lookup of AnanasGlobal %zu failed", global_ananas_id);
 		return NMPM_PLUGIN_FAILURE;
 	}
+
 	if (has_ananas) {
-		allocated_module->active_ananas[ananas_id] = true;
+			allocated_module->active_ananas[ananas_id] = true;
+	} else {
+		switch(aout) {
+			case ONLY_AOUT0:
+				aoutbegin = 0;
+				aoutend = 1;
+				break;
+			case ONLY_AOUT1:
+				aoutbegin = 1;
+				aoutend = 2;
+				break;
+			case BOTH_AOUT:
+				aoutbegin = 0;
+				aoutend = 2;
+				break;
+			default:
+				snprintf(function_error_msg, MAX_ERROR_LENGTH, "AnalogOnHICANN %d out of range", aout);
+				return NMPM_PLUGIN_FAILURE;
+		}
+
+		for (aoutcounter = aoutbegin; aoutcounter < aoutend; aoutcounter++) {
+			if (hwdb4c_has_adc_entry(hwdb_handle, global_fpga_id, aoutcounter, &has_adc_entry) != HWDB4C_SUCCESS || !has_adc_entry) {
+				snprintf(function_error_msg, MAX_ERROR_LENGTH, "ADC Entry (FPGAGlobal %zu, AnalogOnHICANN %zu) not in HWDB", global_fpga_id, aoutcounter);
+				retval = NMPM_PLUGIN_FAILURE;
+				goto ADD_ADC_CLEANUP;
+			}
+			if (hwdb4c_get_adc_entry(hwdb_handle, global_fpga_id, aoutcounter, &adc_entry) != HWDB4C_SUCCESS) {
+				snprintf(function_error_msg, MAX_ERROR_LENGTH, "get ADC Entry (FPGAGlobal %zu, AnalogOnHICANN %zu) failed", global_fpga_id, aoutcounter);
+				retval = NMPM_PLUGIN_FAILURE;
+				goto ADD_ADC_CLEANUP;
+			}
+			strncpy(adc_license, adc_entry->coord, MAX_ADC_COORD_LENGTH);
+			// check if license is already requested
+			for (adccounter = 0; adccounter < allocated_module->num_active_adcs; adccounter++) {
+				if (strcmp(adc_license, allocated_module->active_adcs[adccounter]) == 0) {
+					//license already in list of to be requested licenses
+					goto ADD_ADC_CLEANUP;
+				}
+			}
+			// check if requesting to many adcs
+			if (allocated_module->num_active_adcs + 1 > MAX_ADCS_PER_WAFER) {
+				snprintf(function_error_msg, MAX_ERROR_LENGTH, "Requesting more ADC licenses than available on one module (Wmod %zu)", allocated_module->wafer_id);
+				retval = NMPM_PLUGIN_FAILURE;
+				goto ADD_ADC_CLEANUP;
+			}
+			strcpy(allocated_module->active_adcs[allocated_module->num_active_adcs], adc_license);
+			allocated_module->num_active_adcs++;
+
+	ADD_ADC_CLEANUP:
+			if(adc_entry) {
+				hwdb4c_free_adc_entry(adc_entry);
+				adc_entry = NULL;
+			}
+			if (retval == NMPM_PLUGIN_FAILURE) {
+				break;
+			}
+		}
 	}
+
+	if (_add_trigger(fpga_id, allocated_module) != NMPM_PLUGIN_SUCCESS) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "failed to request trigger for (Wmod %zu)", allocated_module->wafer_id);
+		retval = NMPM_PLUGIN_FAILURE;
+		goto ADD_ADC_CLEANUP;
+	}
+
+	return retval;
+}
+
+static int _add_trigger(size_t fpga_id, wafer_res_t *allocated_module)
+{
+	size_t trigger_id = 0;
+	if (hwdb4c_FPGAOnWafer_toTriggerOnWafer(fpga_id, &trigger_id) != HWDB4C_SUCCESS) {
+		snprintf(function_error_msg, MAX_ERROR_LENGTH, "Conversion FPGAOnWafer %zu to TriggerOnWafer failed", fpga_id);
+		return NMPM_PLUGIN_FAILURE;
+	}
+	allocated_module->active_trigger[trigger_id] = true;
 	return NMPM_PLUGIN_SUCCESS;
 }
 
