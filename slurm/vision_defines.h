@@ -60,5 +60,10 @@ static char const* const vision_quiggeldy_enabled_env_name = "QUIGGELDY_ENABLED"
 static char const* const vision_quiggeldy_ip_env_name = "QUIGGELDY_IP";
 static char const* const vision_quiggeldy_port_env_name = "QUIGGELDY_PORT";
 static char const* const vision_quiggeldy_partition_env_name = "QUIGGELDY_PARTITION";
+// A user name that the client can set for itself if several clients access quiggeldy via the same
+// user. For obvious reasons, this only works if munge is disabled, hence the name.
+// If this environment variable is set, the client automatically disables munge
+// support, even if it was compiled in.
+static char const* const vision_quiggeldy_user_no_munge_env_name = "QUIGGELDY_USER_NO_MUNGE";
 
 #pragma GCC diagnostic pop
