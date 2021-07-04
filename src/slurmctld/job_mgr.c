@@ -7918,7 +7918,7 @@ static int _test_job_desc_fields(job_desc_msg_t * job_desc)
 	    _test_strlen(job_desc->features, "features", 1024)		||
 	    _test_strlen(
 		    job_desc->cluster_features, "cluster_features", 1024)   ||
-	    _test_strlen(job_desc->licenses, "licenses", 1024)		||
+	    _test_strlen(job_desc->licenses, "licenses", 1024 * 10)		||
 	    _test_strlen(job_desc->mail_user, "mail_user", 1024)	||
 	    _test_strlen(job_desc->mcs_label, "mcs_label", 1024)	||
 	    _test_strlen(job_desc->mem_bind, "mem-bind", 1024 * 128)	||
