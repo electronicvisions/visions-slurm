@@ -39,10 +39,6 @@ fi
 
 GIT_REMOTE_DEPLOYMENT="review"
 
-# if file does not exist, it will be generated
-# NOTE: This corresponds to the location INSIDE the container!
-MODULE_FILE_STORE="/run/slurm/current_modules.sh"
-
 ###############
 # BOOKKEEPING #
 ###############
@@ -71,61 +67,20 @@ fi
 # /BOOKKEEPING #
 ################
 
-# OJB (03.12.2018 17:56:54):
-# For unknown reasons, autoconf and automake do not appear in the
-# visionary-slurmviz view and hence need to be loaded "manually" prior to
-# compiling.
-#
-# See: https://gitviz.kip.uni-heidelberg.de/projects/symap2ic/work_packages/3025
-spack_dependencies=(
-  "autoconf"
-  "automake"
-  "visionary-slurmviz"
-)
-
-
-get_latest_version() {
-  # Usage: get_latest_version <pkg-name>
-  #
-  # Get the latest version of a given package in the spack installation. This
-  # takes into account compiler version, so if a package is available by two
-  # compiler versions, the newer one is taken.
-  FILE_AWK=$(mktemp)
-
-  add_cleanup_step "rm '${FILE_AWK}'"
-
-  cat >"${FILE_AWK}" <<EOF
-/^--/ {
-  # \`spack find\` sorts installed specs by compiler, these lines start with
-  # two dashes and we can hence identify the compiler name in the fourth field.
-  compiler=\$4
-}
-
-/^[a-zA-Z]/ {
-  # insert compiler name into spec name at appropriate position (i.e., prior to
-  # specifying any variants)
-  idx = match(\$1, /(\\+|\\~|$)/);
-  printf("%s%%%s%s\\n", substr(\$1, 0, idx-1), compiler, substr(\$1, idx))
-}
-EOF
-
-  spack find -v "$1" | awk -f "${FILE_AWK}"| sort -V | tail -n 1
-}
-
 get_config_opts() {
 cat <<EOF | tr '\n' ' '
 CFLAGS=-g
 --prefix=${DEPLOY_ROOT}
 --enable-pam
---with-hdf5=$(spack location -i "$(get_latest_version hdf5)")
---with-hwloc=$(spack location -i "$(get_latest_version hwloc@:1.999.999)")
---with-json=$(spack location -i "$(get_latest_version json-c)")
---with-libcurl=$(spack location -i "$(get_latest_version curl)")
---with-lz4=$(spack location -i "$(get_latest_version lz4)")
---with-munge=$(spack location -i "$(get_latest_version munge)")
+--with-hdf5=/opt/spack_views/visionary-slurmviz
+--with-hwloc=/opt/spack_views/visionary-slurmviz
+--with-json=/opt/spack_views/visionary-slurmviz
+--with-libcurl=/opt/spack_views/visionary-slurmviz
+--with-lz4=/opt/spack_views/visionary-slurmviz
+--with-munge=/opt/spack_views/visionary-slurmviz
 --with-readline=yes
---with-ssl=$(spack location -i "$(get_latest_version openssl)")
---with-zlib=$(spack location -i "$(get_latest_version zlib)")
+--with-ssl=/opt/spack_views/visionary-slurmviz
+--with-zlib=/opt/spack_views/visionary-slurmviz
 EOF
 }
 
@@ -156,7 +111,6 @@ export_ldflags() {
     "${DEPLOY_ROOT}/lib"
     "${HWDB_ROOT}/lib"
     "/opt/spack_views/visionary-slurmviz/lib"
-    "/opt/spack_views/visionary-wafer/lib"
   )
 
   # prepend all rpaths with '-rpath' and join by commas
@@ -172,50 +126,6 @@ export_ldflags() {
 }
 
 setup_compile_dependencies() {
-  # Extracts all dependencies needed for compiling (i.e., packages described in
-  # ${spack_dependencies}[@]) from spack and stores all module calls in a
-  # temporary script at ${MODULE_FILE_STORE}. We therefore only have to call
-  # the slow `spack module loads`-command once for each dependency. Should the
-  # dependencies (or the spack installation used) change, the module script has
-  # to be deleted manually in order to trigger regeneration.
-
-  local reset_x
-  test -f "${SPACK_SETUP_ENV}" || { echo "Could not init spack, failing!" >&2; exit 1; }
-  source "${SPACK_SETUP_ENV}"
-
-  # for some reason, SPACK_SHELL does not get set correctly, so adjust manually --obreitwi, 25-07-18 17:48:04
-  export SPACK_SHELL="bash"
-
-  if [ ! -f "${MODULE_FILE_STORE}" ]; then
-    if [ ! -d "$(dirname "${MODULE_FILE_STORE}")" ]; then
-      echo "/run/${CLUSTERIZE_INSTALL_TYPE} does not exist yet!" \
-           "Typically one of the" \
-           "slurm{,ctl,db}d@skretch{,-testing}.services" \
-           "has to be started for them to exist.." >&2
-      exit 1
-    fi
-    {
-      echo "# Current modules used by slurm in container."
-      echo "# Delete this file and restart slurm to force regeneration!"
-      for dep in "${spack_dependencies[@]}"; do
-        spack module tcl loads -r "$(get_latest_version ${dep})"
-      done
-    } \
-    | awk '($0 in lines == 0) { lines[$0]; print }' \
-    > "${MODULE_FILE_STORE}"
-
-    [ $? ] || { echo "Could not set up spack environment" >&2 ; exit 1; }
-  fi
-
-  # no debug output for module loading -> too much
-  set +x
-  if [[ -o xtrace ]]; then
-    set +x
-    reset_x=1
-  fi
-  source ${MODULE_FILE_STORE}
-  (( reset_x == 1 )) && module list && set -x
-
   export CC=/opt/spack_views/visionary-dev-tools/bin/gcc
   export CXX=/opt/spack_views/visionary-dev-tools/bin/g++
 
@@ -369,7 +279,8 @@ export_spack_view() {
   # Set up slurm view $1
   local SVF="/opt/spack_views/$1"
   export PATH="${SVF}/bin${PATH:+:}${PATH}"
-  export PYTHONHOME="${SVF}${PYTHONHOME:+:}${PYTHONHOME}"
+  export PYTHONHOME="${SVF}"
+  export SPACK_PYTHON_BINARY="${SVF}/bin/python"
   export MANPATH="${SVF}/man:${SVF}/share/man${MANPATH:+:}${MANPATH}"
   export LIBRARY_PATH="${SVF}/lib:${SVF}/lib64${LIBRARY_PATH:+:}${LIBRARY_PATH}"
   export LD_LIBRARY_PATH="${SVF}/lib:${SVF}/lib64${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}"
@@ -378,6 +289,7 @@ export_spack_view() {
   export C_INCLUDE_PATH="${SVF}/include${C_INCLUDE_PATH:+:}${C_INCLUDE_PATH}"
   export CPLUS_INCLUDE_PATH="${SVF}/include${CPLUS_INCLUDE_PATH:+:}${CPLUS_INCLUDE_PATH}"
   export PKG_CONFIG_PATH="${SVF}/lib/pkgconfig:${SVF}/lib64/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig${PKG_CONFIG_PATH:+:}${PKG_CONFIG_PATH}"
+  export CMAKE_PREFIX_PATH=${SVF}${CMAKE_PREFIX_PATH:+:}${CMAKE_PREFIX_PATH}
 }
 
 export_slurm_conf() {
