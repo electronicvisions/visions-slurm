@@ -155,7 +155,7 @@ cmd_all() {
   test "$SOURCE_OWNER" != "root" || echo "$0 should not be owned by root"
 
   pushd ${SOURCE}
-    for cmd in autogen configure build install install_spank testlib; do
+    for cmd in clean autogen configure build install install_spank testlib; do
       sudo -u ${SLURM_USER} ${SCRIPTNAME} ${cmd} || exit 1
     done
   popd
