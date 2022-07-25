@@ -94,6 +94,10 @@ struct spank_option my_spank_options[] = {
     {"without-trigger", "",
      "Skip the automated allocation of adc trigger group licenses",
      0, 0, (spank_opt_cb_f)_no_op},
+    {"allocate-aggregator", "0/1",
+     "Allocate the aggregator board for HX multi chip systems (wafer ID >80). "
+     "Defaults to 1 (true)",
+     1, 0, (spank_opt_cb_f)_check_opt},
     {"skip-hicann-init", "",
      "Skip the automated initialization of neighbouring licenses"
      "Cannot be specified together with 'force-hicann-init'.",
