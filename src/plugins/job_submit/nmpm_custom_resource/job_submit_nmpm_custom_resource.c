@@ -83,31 +83,32 @@ typedef struct option_index {
 } option_index_t;
 
 //global array of valid options
-#define NUM_OPTIONS 20
+#define NUM_OPTIONS 21
 // options that are only valid if single wafer option is given
-#define WMOD_DEPENDENT_MIN_INDEX 4
-#define WMOD_DEPENDENT_MAX_INDEX 11
+#define WMOD_DEPENDENT_MIN_INDEX 5
+#define WMOD_DEPENDENT_MAX_INDEX 12
 static const option_index_t custom_res_options[NUM_OPTIONS] = {
 	{ "wmod",                            0},
 	{ "wafer",                           0},
 	{ "hwdb_path",                       1},
 	{ "skip_master_alloc",               2},
 	{ "without_trigger",                 3},
-	{ "reticle_with_aout",               4},
-	{ "fpga_with_aout",                  5},
-	{ "hicann_with_aout",                6},
-	{ "reticle_of_hicann_with_aout",     7},
-	{ "reticle",                         4},
-	{ "fpga",                            5},
-	{ "hicann",                          6},
-	{ "reticle_of_hicann",               7},
-	{ "reticle_without_aout",            8},
-	{ "fpga_without_aout",               9},
-	{ "hicann_without_aout",            10},
-	{ "reticle_of_hicann_without_aout", 11},
-	{ "skip_hicann_init",               12},
-	{ "force_hicann_init",              13},
-	{ "defects_path",                   14}
+	{ "allocate_aggregator",             4},
+	{ "reticle_with_aout",               5},
+	{ "fpga_with_aout",                  6},
+	{ "hicann_with_aout",                7},
+	{ "reticle_of_hicann_with_aout",     8},
+	{ "reticle",                         5},
+	{ "fpga",                            6},
+	{ "hicann",                          7},
+	{ "reticle_of_hicann",               8},
+	{ "reticle_without_aout",            9},
+	{ "fpga_without_aout",              10},
+	{ "hicann_without_aout",            11},
+	{ "reticle_of_hicann_without_aout", 12},
+	{ "skip_hicann_init",               13},
+	{ "force_hicann_init",              14},
+	{ "defects_path",                   15}
 };
 
 // global handle of hwdb
@@ -205,6 +206,7 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 	bool wmod_only_hw_option = true;
 	bool skip_master_alloc = false;
 	bool without_trigger = false;
+	bool allocate_aggregator = true;
 	bool skip_hicann_init = false;
 	bool force_hicann_init = false;
 	size_t counter;
@@ -298,6 +300,19 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			goto CLEANUP;
 		}
 		without_trigger = true;
+	}
+
+	if (parsed_options[_option_lookup("allocate_aggregator")].num_arguments == 1) {
+		if (strcmp(parsed_options[_option_lookup("allocate_aggregator")].arguments[0], "1") == 0) {
+			allocate_aggregator = true;
+		}
+		else if(strcmp(parsed_options[_option_lookup("allocate_aggregator")].arguments[0], "0") == 0) {
+			allocate_aggregator = false;
+		} else {
+			snprintf(my_errmsg, MAX_ERROR_LENGTH, "Invalid allocate-aggregator argument %s. Only 0 and 1 allowed.", parsed_options[_option_lookup("allocate_aggregator")].arguments[0]);
+			retval = SLURM_ERROR;
+			goto CLEANUP;
+		}
 	}
 
 	if (parsed_options[_option_lookup("skip_hicann_init")].num_arguments == 1) {
@@ -647,7 +662,10 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 		size_t triggercounter = 0;
 		size_t ananascounter = 0;
 		size_t const hx_cube_id_min = 60;
-		if (allocated_modules[modulecounter].wafer_id >= hx_cube_id_min) {
+		size_t const aggregator_id_min = 80;
+
+		// HX cube setups are in the range 60-79 and hx aggregator setups starting from 80
+		if (allocated_modules[modulecounter].wafer_id >= hx_cube_id_min && allocated_modules[modulecounter].wafer_id < aggregator_id_min) {
 			char id_str[50];
 			sprintf(id_str, "%ld", allocated_modules[modulecounter].wafer_id - hx_cube_id_min);
 			char* yaml_string = hwdb4c_get_yaml_entries(hwdb_path, "hxcube_id", id_str);
@@ -655,6 +673,14 @@ extern int job_submit(struct job_descriptor *job_desc, uint32_t submit_uid, char
 			strcat(hwdb_yaml_environment_string, yaml_string);
 			free(yaml_string);
 		}
+
+		if (allocate_aggregator && allocated_modules[modulecounter].wafer_id >= aggregator_id_min) {
+			char aggregator_license_str[10];
+			sprintf(aggregator_license_str, "W%ldM0", allocated_modules[modulecounter].wafer_id);
+			strcat(slurm_licenses_string, aggregator_license_str);
+			strcat(slurm_licenses_string, ",");
+		}
+
 		for (hicanncounter = 0; hicanncounter < NUM_HICANNS_ON_WAFER; hicanncounter++) {
 			if (allocated_modules[modulecounter].active_hicanns[hicanncounter]) {
 				size_t const global_id = allocated_modules[modulecounter].wafer_id * NUM_HICANNS_ON_WAFER + hicanncounter;
