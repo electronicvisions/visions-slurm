@@ -45,7 +45,7 @@ popd
 [ -f ./waf ] && rm -v ./waf
 cp -v waf-repo/waf .
 
-${CMD} ./waf setup --project=hwdb --repo-db-url=${REPO_DB_URL}
+${CMD} ./waf setup --project=hwdb --repo-db-url=${REPO_DB_URL} --without-pybind
 ${CMD} ./waf repos-update --repo-db-url=${REPO_DB_URL}
 export CFLAGS_PREPEND='-D_FORTIFY_SOURCE=1 -fstack-protector-strong'
 export CXXFLAGS_PREPEND='-D_FORTIFY_SOURCE=1 -fstack-protector-strong'
@@ -63,7 +63,7 @@ merged_rpaths="$(
 )"
 
 # remove last comma from ${merged_paths}
-export LDFLAGS="-Wl,${merged_rpaths::-1},-z,defs${LDFLAGS:+,${LDFLAGS}}"
+export LDFLAGS="-Wl,${merged_rpaths::-1}${LDFLAGS:+,${LDFLAGS}}"
 ${CMD} ./waf configure -v --disable-confcache --build-profile=debug build install --target hwdb4c --test-execall
 
 popd
