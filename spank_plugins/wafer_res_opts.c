@@ -109,14 +109,16 @@ struct spank_option my_spank_options[] = {
 
 static int _check_opt(int val, const char* optarg, int remote)
 {
-	if (optarg == NULL)
-		return -1;
-	return 0;
+	if ((optarg == NULL) || (strcmp(optarg, "") == 0)) {
+		slurm_error("Empty argument provided");
+		return ESPANK_BAD_ARG;
+	}
+	return ESPANK_SUCCESS;
 }
 
 static int _no_op(int val, const char* optarg, int remote)
 {
-	return 0;
+	return ESPANK_SUCCESS;
 }
 
 int slurm_spank_init(spank_t sp, int ac, char** av)
@@ -126,7 +128,7 @@ int slurm_spank_init(spank_t sp, int ac, char** av)
 	for (optioncounter = 0; my_spank_options[optioncounter].name != endmarker.name;
 	     optioncounter++) {
 		if (spank_option_register(sp, &my_spank_options[optioncounter]) != ESPANK_SUCCESS)
-			return -1;
+			return ESPANK_ERROR;
 	}
-	return 0;
+	return ESPANK_SUCCESS;
 }
