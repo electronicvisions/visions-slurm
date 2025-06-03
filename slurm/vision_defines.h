@@ -66,4 +66,7 @@ static char const* const vision_quiggeldy_partition_env_name = "QUIGGELDY_PARTIT
 // support, even if it was compiled in.
 static char const* const vision_quiggeldy_user_no_munge_env_name = "QUIGGELDY_USER_NO_MUNGE";
 
+// User token submitted to Quiggeldy for verification of user access.
+static char const* const vision_quiggeldy_token_env_name = "QUIGGELDY_TOKEN";
+
 #pragma GCC diagnostic pop
